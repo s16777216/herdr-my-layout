@@ -174,6 +174,7 @@ export class Graph {
     this.listId = `graph-rows-${Math.random().toString(36).slice(2)}`;
     this.diffId = `${this.listId}-diff`;
     this.all = true; this.remotes = true; this.wide = false; this.graphMax = 160; this.scale = null;
+    this.graphCollapsed = localStorage.getItem("git-graph.collapsed") === "true";
     this.watchToken = 0; this.seenChange = shared("git-graph.changed");
     this.cols = withDefaults(); this.drag = null;
     this.seen = new Map(); this.commitDetails = new Map();
@@ -1056,23 +1057,38 @@ export class Graph {
 
 
   // All | Current and Remotes, over the history.
-  toolbar(t) {
+  toggleGraphCollapsed(cx) {
+    this.graphCollapsed = !this.graphCollapsed;
+    try { localStorage.setItem("git-graph.collapsed", String(this.graphCollapsed)); } catch {}
+    if (this.graphCollapsed && this.kbView?.region === "graph") {
+      this.kbView = { region: "changes" };
+    }
+    cx.notify();
+  }
+
+  toolbar(t, collapsed = false) {
     const segment = (id, text, tip, on, action) => div().id(id).h(22).px(8).flex().items_center().rounded(4).cursor_pointer()
       .bg(on ? t.raised : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.border_1().border_color(t.border))
       .hover((s) => s.text_color(t.foreground)).tooltip(tip).accessibility_label(tip).on_click(action).child(text);
     // The history's heading: its glyph in the 16px gutter column the changes groups use (x 16), then the controls.
-    return h_flex().h(36).flex_none().pl(16).pr(8).gap(8).items_center().border_b(1).border_color(t.border)
+    return h_flex().h(36).flex_none().pl(16).pr(8).gap(8).items_center().when(!collapsed, (e) => e.border_b(1).border_color(t.border))
+      .when(collapsed, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.toggleGraphCollapsed(cx)))
       .child(div().w(16).flex_none().flex().justify_center().text_color(t.muted).child(svg(icon("graph")).size(12)))
-      .child(h_flex().p(2).gap(2).rounded(6).bg(t.background).border_1().border_color(t.border)
-        .child(segment("graph-all", "All", "Every branch", this.all, (_e, cx) => this.setScope(true, cx)))
-        .child(segment("graph-current", "Current", "The current branch only", !this.all, (_e, cx) => this.setScope(false, cx))))
-      .child(h_flex().id("graph-remotes").min_w(0).h(26).px(8).gap(8).items_center().rounded(6).cursor_pointer().text_color(t.muted)
-        .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(this.remotes ? "Hide remote branches" : "Show remote branches")
-        .accessibility_label("Show remote branches").on_click((_e, cx) => this.setRemotes(cx))
-        .child(div().size(14).rounded(4).border_1().border_color(this.remotes ? t.accent : t.input).when(this.remotes, (e) => e.bg(t.accent)).flex().items_center().justify_center()
-          .flex_none().when(this.remotes, (e) => e.child(svg(icon("check")).size(10).text_color(t.accent_foreground))))
-        // ponytail: narrow panels (368px, wide mono UI fonts) truncate instead of overflowing
-        .child(div().min_w(0).truncate().child("Remotes")));
+      .when(collapsed, (e) => e.child(div().text_size(K.SIZE.body).font_medium().text_color(t.muted).child("Graph")))
+      .when(!collapsed, (e) => e
+        .child(h_flex().p(2).gap(2).rounded(6).bg(t.background).border_1().border_color(t.border)
+          .child(segment("graph-all", "All", "Every branch", this.all, (_e, cx) => this.setScope(true, cx)))
+          .child(segment("graph-current", "Current", "The current branch only", !this.all, (_e, cx) => this.setScope(false, cx))))
+        .child(h_flex().id("graph-remotes").min_w(0).h(26).px(8).gap(8).items_center().rounded(6).cursor_pointer().text_color(t.muted)
+          .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(this.remotes ? "Hide remote branches" : "Show remote branches")
+          .accessibility_label("Show remote branches").on_click((_e, cx) => this.setRemotes(cx))
+          .child(div().size(14).rounded(4).border_1().border_color(this.remotes ? t.accent : t.input).when(this.remotes, (e) => e.bg(t.accent)).flex().items_center().justify_center()
+            .flex_none().when(this.remotes, (e) => e.child(svg(icon("check")).size(10).text_color(t.accent_foreground))))
+          // ponytail: narrow panels (368px, wide mono UI fonts) truncate instead of overflowing
+          .child(div().min_w(0).truncate().child("Remotes"))))
+      .child(div().flex_1())
+      .child(K.iconButton(t, "graph-collapse", collapsed ? "chevron-right" : "chevron-down", (_e, cx) => this.toggleGraphCollapsed(cx),
+        { tip: collapsed ? "Expand graph" : "Collapse graph", size: 12 }).size(22));
   }
 
   columns(t, width) {
@@ -1213,18 +1229,29 @@ export class Graph {
   // Top: the changes; a divider to drag; bottom: the history, or the open file's diff.
   body(t, mono) {
     const ready = this.state === "ready";
+    const collapsed = Boolean(this.graphCollapsed) && !this.diffFile;
     return v_flex().id(`${this.listId}-body`).flex_1().min_h(0).text_size(K.SIZE.body)
       .on_size_change((size, cx) => { const h = size.height / this.unit(); if (h !== this.bodyH) { this.bodyH = h; cx.notify(); } })
-      .child(div().h(this.topHeight()).flex_none().min_h(0).child(this.changes.render(t, { cursor: this.kbView?.region === "changes" ? this.cur.changes.id : null, top: this.top })))
-      .child(div().id("git-divider").h(DIVIDER).flex_none().cursor_row_resize().flex().flex_col().justify_center()
-        .on_mouse_down("left", (e, cx) => this.startSplit(e, cx))
-        .child(div().h(1).w_full().bg(this.drag?.key === "split" ? t.accent : t.border))
-        .hover((s) => s.bg(t.hover)))
-      .child(v_flex().flex_1().min_h(0)
+      .child(
+        div().min_h(0)
+          .when(!collapsed, (e) => e.h(this.topHeight()).flex_none())
+          .when(collapsed, (e) => e.flex_1())
+          .child(this.changes.render(t, { cursor: this.kbView?.region === "changes" ? this.cur.changes.id : null, top: this.top }))
+      )
+      .when(!collapsed, (e) => e.child(
+        div().id("git-divider").h(DIVIDER).flex_none().cursor_row_resize().flex().flex_col().justify_center()
+          .on_mouse_down("left", (e, cx) => this.startSplit(e, cx))
+          .child(div().h(1).w_full().bg(this.drag?.key === "split" ? t.accent : t.border))
+          .hover((s) => s.bg(t.hover))
+      ))
+      .child(v_flex().min_h(0)
+        .when(!collapsed, (e) => e.flex_1())
+        .when(collapsed, (e) => e.flex_none().border_t(1).border_color(t.border))
         .when(Boolean(this.diffFile), (e) => e.child(this.filePane(t, mono)))
-        .when(!this.diffFile && ready, (e) => e.child(this.toolbar(t)).child(this.columns(t, this.graphWidth())).child(this.list(t, mono))
+        .when(!this.diffFile && collapsed, (e) => e.child(this.toolbar(t, true)))
+        .when(!this.diffFile && !collapsed && ready, (e) => e.child(this.toolbar(t, false)).child(this.columns(t, this.graphWidth())).child(this.list(t, mono))
           .when(Boolean(this.selected), (el) => el.child(this.detailsPane(t, mono))))
-        .when(!this.diffFile && !ready, (e) => e.child(this.empty(t))));
+        .when(!this.diffFile && !collapsed && !ready, (e) => e.child(this.empty(t))));
   }
 
   diffRow({ kind, number, text }, t) {

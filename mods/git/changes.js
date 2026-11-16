@@ -284,9 +284,7 @@ export class Changes {
         .when(!ready, (e) => e.border_color(t.border).text_color(this.committing ? t.muted : t.dim))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .tooltip(values?.all ? "Stage everything and commit (⌘⏎)" : values ? "Commit the staged changes (⌘⏎)" : this.message.trim() ? "Nothing to commit" : "Write a message to commit")
-        .child(this.committing ? "Committing…" : values?.all ? "Commit all" : "Commit"))
-      .child(K.iconButton(t, "git-view-mode-commit", this.treeView ? "files" : "folder", (_e, cx) => this.toggleViewMode(cx),
-        { tip: this.treeView ? "View as list" : "View as tree", size: 14 }).h(32).w(32).rounded(8));
+        .child(this.committing ? "Committing…" : values?.all ? "Commit all" : "Commit"));
   }
 
   // A group's header, as Crew's section: 11px muted words, count and chevron on the right; on hover its "all" buttons.

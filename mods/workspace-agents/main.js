@@ -2,7 +2,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, hc, notify, home, readTextFile } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -78,9 +78,140 @@ function icon(p, size, color) {
   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
 }
 
+function isAgent(agent, term) {
+  if (!agent) return false;
+  if (agent.program?.agent) return true;
+  if (agent.program?.shell) return false;
+  const app = (agent.app || agent.program?.key || agent.program?.name || "").toLowerCase();
+  if (app === "shell" || app === "powershell" || app === "pwsh" || app === "cmd" || app === "bash" || app === "zsh") {
+    return false;
+  }
+  if (term?.status?.app) return true;
+  return false;
+}
+
+function findLastMatchingJsonl(text, keyName, matchVal, targetField) {
+  if (!text) return null;
+  const chunk = text.length > 80000 ? text.slice(-80000) : text;
+  const lines = chunk.split("\n");
+  const normMatch = matchVal ? matchVal.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "") : "";
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const obj = JSON.parse(line);
+      const val = obj[keyName];
+      if (val) {
+        const normVal = String(val).toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+        if (normVal === normMatch || normVal.endsWith(normMatch) || normMatch.endsWith(normVal)) {
+          return obj[targetField] || null;
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function resolveRealSessionId(progKey, cwd, title) {
+  const key = (progKey || "").toLowerCase();
+  const h = home();
+  try {
+    if (key === "antigravity" || key === "agy") {
+      const text = await readTextFile(`${h}/.gemini/antigravity-cli/history.jsonl`).catch(() => null);
+      const id = findLastMatchingJsonl(text, "workspace", cwd, "conversationId");
+      if (id) return id;
+    }
+    if (key === "claude" || key === "claude-code") {
+      const text = await readTextFile(`${h}/.claude/history.jsonl`).catch(() => null);
+      const id = findLastMatchingJsonl(text, "project", cwd, "sessionId");
+      if (id) return id;
+    }
+    if (key === "codex") {
+      const text = await readTextFile(`${h}/.codex/session_index.jsonl`).catch(() => null);
+      if (text) {
+        const chunk = text.length > 50000 ? text.slice(-50000) : text;
+        const lines = chunk.trim().split("\n");
+        const normTitle = title ? title.toLowerCase() : "";
+        let newestId = null;
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const obj = JSON.parse(lines[i]);
+            if (obj.id) {
+              if (!newestId) newestId = obj.id;
+              if (normTitle && obj.thread_name && normTitle.includes(obj.thread_name.toLowerCase())) {
+                return obj.id;
+              }
+            }
+          } catch {}
+        }
+        if (newestId) return newestId;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function buildAgentLaunch(program, session, mode = "resume") {
+  const key = (program?.key || "").toLowerCase();
+  let baseCmd = key || "claude";
+  if (key === "antigravity") baseCmd = "agy";
+  else if (key === "claude-code") baseCmd = "claude";
+
+  if (mode === "new") {
+    return { cmd: baseCmd, argv: [baseCmd] };
+  }
+
+  const sid = session?.sessionId;
+  const isRealId = sid && (sid.includes("-") || sid.length >= 16);
+
+  if (baseCmd === "claude") {
+    if (isRealId) return { cmd: `claude --resume ${sid}`, argv: ["claude", "--resume", sid] };
+    return { cmd: "claude --continue", argv: ["claude", "--continue"] };
+  }
+  if (baseCmd === "agy") {
+    if (isRealId) return { cmd: `agy --conversation ${sid}`, argv: ["agy", "--conversation", sid] };
+    return { cmd: "agy --continue", argv: ["agy", "--continue"] };
+  }
+  if (baseCmd === "codex") {
+    if (isRealId) return { cmd: `codex resume ${sid}`, argv: ["codex", "resume", sid] };
+    return { cmd: "codex resume --last", argv: ["codex", "resume", "--last"] };
+  }
+  if (baseCmd === "pi") {
+    if (isRealId) return { cmd: `pi --session ${sid}`, argv: ["pi", "--session", sid] };
+    return { cmd: "pi", argv: ["pi"] };
+  }
+  return { cmd: `${baseCmd} --continue`, argv: [baseCmd, "--continue"] };
+}
+
+function resolveAgentCli(program, term) {
+  if (term?.argv?.length) {
+    const first = term.argv[0].toLowerCase().replace(/\.exe$/, "").split(/[\\/]/).pop();
+    if (!["pwsh", "powershell", "cmd", "bash", "zsh", "sh"].includes(first)) {
+      return { cmd: first, argv: term.argv };
+    }
+  }
+  const key = (program?.key || "").toLowerCase();
+  let cmd = key || "claude";
+  if (key === "antigravity") cmd = "agy";
+  else if (key === "claude-code") cmd = "claude";
+  return { cmd, argv: [cmd] };
+}
+
+function extractSessionId(agent, terminal) {
+  if (terminal?.report?.session_id) return String(terminal.report.session_id);
+  if (terminal?.report?.id) return String(terminal.report.id);
+  const uuidMatch = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(agent.title ?? "");
+  if (uuidMatch) return uuidMatch[0];
+  if (terminal?.labels?.session) return String(terminal.labels.session);
+  if (terminal?.labels?.sessionId) return String(terminal.labels.sessionId);
+  if (terminal?.labels?.["herdr.tab"]) return String(terminal.labels["herdr.tab"]).slice(2, 8);
+  if (terminal?.address) return String(terminal.address);
+  return agent.tab ? String(agent.tab).slice(0, 6) : "ag";
+}
+
 export default class Agents extends View {
   init(_props, cx) {
-    if (props()?.sortMenu) return;
+    if (props()?.sortMenu || props()?.sessionMenu) return;
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     try { this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}"); } catch { this.changed = {}; }
@@ -89,7 +220,287 @@ export default class Agents extends View {
     if (!Array.isArray(this.pendingPins)) this.pendingPins = [];
     if (!this.pendingPins.length) localStorage.removeItem("pins");
     this.migratingPins = new Set();
+    this.realSessionIds = new Map();
+    this.seenLiveKeys = new Set();
+    this.hoveredDormant = null;
+    this.lastActionSeq = shared("workspace-agents.session_action")?.seq ?? null;
+    this.cachedSessions = this.loadSessions();
+    setShared("workspace.dormant_sessions", this.cachedSessions);
+    this.resolveAllSessions(cx);
+    cx.timer.every(10000, (cx) => this.resolveAllSessions(cx));
     cx.timer.every(30000, (cx) => cx.notify());
+  }
+
+  loadSessions() {
+    try {
+      return JSON.parse(localStorage.getItem("agent_sessions_v2") ?? "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  saveSessions(sessions) {
+    try {
+      localStorage.setItem("agent_sessions_v2", JSON.stringify(sessions));
+      setShared("workspace.dormant_sessions", sessions);
+    } catch {}
+  }
+
+  deleteSession(key, cx) {
+    const sessions = this.loadSessions();
+    delete sessions[key];
+    this.saveSessions(sessions);
+    if (this.cachedSessions) delete this.cachedSessions[key];
+    if (cx) cx.notify();
+  }
+
+  resolveAllSessions(cx) {
+    cx.spawn(async (cx) => {
+      const sessions = this.loadSessions();
+      let dirty = false;
+      for (const s of Object.values(sessions)) {
+        if (!s.sessionId || (!s.sessionId.includes("-") && s.sessionId.length < 16)) {
+          const realId = await resolveRealSessionId(s.program?.key, s.cwd, s.displayName || s.title);
+          if (realId) {
+            s.sessionId = realId;
+            s.shortTag = realId.slice(0, 7);
+            if (s.cwd) this.realSessionIds.set(s.cwd, realId);
+            dirty = true;
+          }
+        } else if (s.cwd && s.sessionId) {
+          this.realSessionIds.set(s.cwd, s.sessionId);
+        }
+      }
+      if (dirty) {
+        this.cachedSessions = sessions;
+        this.saveSessions(sessions);
+        cx.notify();
+      }
+    });
+  }
+
+  syncSessions(liveAgents, allTerminals, tabsMap, leadsMap, now) {
+    const sessions = this.loadSessions();
+    const terminalMap = new Map((allTerminals ?? []).map((t) => [t.address, t]));
+    const currentLiveKeys = new Set();
+    let dirty = false;
+
+    for (const a of liveAgents ?? []) {
+      const term = terminalMap.get(a.address);
+      if (!isAgent(a, term)) continue;
+
+      let sessionId = extractSessionId(a, term);
+      if ((!sessionId.includes("-") && sessionId.length < 16) && term?.cwd) {
+        const cached = this.realSessionIds?.get(term.cwd);
+        if (cached) sessionId = cached;
+      }
+      const hasRealUuid = sessionId && (sessionId.includes("-") || sessionId.length >= 16);
+      const shortTag = hasRealUuid ? sessionId.slice(0, 7) : "";
+      const key = `${a.space}::${a.tab}`;
+      currentLiveKeys.add(key);
+      this.seenLiveKeys?.add(key);
+
+      const tabInfo = tabsMap.get(a.tab);
+      const displayName = tabInfo ? title(tabInfo, leadsMap.get(a.tab) ?? a) : (clean(a.title) || a.program?.name || "Agent");
+      const cli = resolveAgentCli(a.program, term);
+      const next = {
+        key,
+        sessionId,
+        shortTag,
+        program: a.program,
+        displayName,
+        tabName: tabInfo?.name ?? a.tab_name ?? null,
+        title: clean(a.title || a.program?.name),
+        space: a.space,
+        space_name: a.space_name,
+        tab: a.tab,
+        cwd: term?.cwd ?? null,
+        launchCmd: cli.cmd,
+        launchArgv: cli.argv,
+        lastSeen: now,
+      };
+      const prev = sessions[key];
+      if (
+        !prev ||
+        prev.sessionId !== next.sessionId ||
+        prev.displayName !== next.displayName ||
+        prev.tabName !== next.tabName ||
+        prev.cwd !== next.cwd ||
+        prev.program?.key !== next.program?.key ||
+        now - (prev.lastSeen ?? 0) > 60000
+      ) {
+        sessions[key] = next;
+        dirty = true;
+      }
+    }
+
+    if (this.seenLiveKeys) {
+      for (const seenKey of [...this.seenLiveKeys]) {
+        if (!currentLiveKeys.has(seenKey)) {
+          this.seenLiveKeys.delete(seenKey);
+          if (sessions[seenKey]) {
+            delete sessions[seenKey];
+            dirty = true;
+          }
+        }
+      }
+    }
+
+    for (const [k, s] of Object.entries(sessions)) {
+      if (!s.program?.agent || (tabsMap.size > 0 && !tabsMap.has(s.tab)) || now - s.lastSeen > 30 * 86400000) {
+        delete sessions[k];
+        dirty = true;
+      }
+    }
+
+    if (dirty) this.saveSessions(sessions);
+    return sessions;
+  }
+
+  wakeDormantSession(s, mode = "resume", cx) {
+    cx.spawn(async (cx) => {
+      if (s.space) run("space.select", { id: s.space });
+      if (s.tab) run("tab.select", { id: s.tab });
+
+      if (mode === "resume" && (!s.sessionId || (!s.sessionId.includes("-") && s.sessionId.length < 16))) {
+        const realId = await resolveRealSessionId(s.program?.key, s.cwd, s.displayName || s.title);
+        if (realId) {
+          s.sessionId = realId;
+          s.shortTag = realId.slice(0, 7);
+          const sessions = this.loadSessions();
+          if (sessions[s.key]) {
+            sessions[s.key].sessionId = realId;
+            sessions[s.key].shortTag = s.shortTag;
+            this.cachedSessions = sessions;
+            this.saveSessions(sessions);
+          }
+        }
+      }
+
+      const launch = buildAgentLaunch(s.program, s, mode);
+      const allPanes = panes() ?? [];
+      const pane = allPanes.find((p) => p.tab === s.tab && p.terminal);
+
+      if (pane?.terminal) {
+        run("pane.focus", { pane: pane.pane });
+        const term = (terminals() ?? []).find((t) => t.address === pane.terminal);
+        if (term && (!term.status || term.status.state !== "working")) {
+          notify({ title: `接續 ${s.program?.name || "Agent"}`, body: "正在載入歷史對話..." });
+          await hc(["send", term.address, launch.cmd]).catch(() => {});
+        }
+      } else {
+        this.deleteSession(s.key, cx);
+        notify({ title: `接續 ${s.program?.name || "Agent"}`, body: "開啟新分頁..." });
+        run("tab.new", {
+          space: s.space,
+          name: s.displayName || s.tabName || s.program?.name || "Agent",
+          folder: s.cwd || undefined,
+          argv: launch.argv,
+        });
+      }
+      cx.notify();
+    });
+  }
+
+  sessionMenu(t) {
+    const s = props()?.session;
+    const items = [
+      { id: "ses-resume", label: "接續對話 (Resume)", icon: "play", mode: "resume" },
+      { id: "ses-new", label: "開立新對話 (New)", icon: "plus", mode: "new" },
+      { id: "ses-dismiss", label: "移除紀錄 (Dismiss)", icon: "x", mode: "dismiss", danger: true },
+    ];
+    return v_flex()
+      .w_full()
+      .p(5)
+      .bg(t.popover)
+      .text_size(12.5)
+      .child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).truncate().child(s?.displayName || s?.program?.name || "Session"))
+      .children(items.map((item) => h_flex()
+        .id(item.id)
+        .h(30)
+        .px(8)
+        .gap(9)
+        .rounded(7)
+        .items_center()
+        .cursor_pointer()
+        .text_color(item.danger ? t.ansi1 : t.foreground)
+        .hover((el) => el.bg(t.hover))
+        .on_click(() => {
+          setShared("workspace-agents.session_action", { seq: Date.now(), mode: item.mode, session: s });
+          closeOverlay(props().overlay);
+        })
+        .child(svg(`mods/workspace-chrome/${item.icon}.svg`).size(13).flex_none().text_color(item.danger ? t.ansi1 : t.muted))
+        .child(div().flex_1().child(item.label))));
+  }
+
+  dormantRow(s, t, now, collapsed, index, cx) {
+    const pic = icon(s.program, 16, t.dim) || svg("mods/workspace-chrome/terminal.svg").size(15).flex_none().text_color(t.dim);
+    const labelText = s.displayName || s.tabName || s.title || s.program?.name || "Agent";
+    const hovered = this.hoveredDormant === s.key;
+    if (collapsed) {
+      return h_flex()
+        .id(`dormant-${s.key}`)
+        .h(26)
+        .px(8)
+        .flex_none()
+        .items_center()
+        .gap(4)
+        .cursor_pointer()
+        .hover((el) => el.bg(t.hover))
+        .tooltip(`${labelText} (點擊喚醒)`)
+        .on_click((_e, cx) => this.wakeDormantSession(s, "resume", cx))
+        .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.dim).child(String(index + 1)))
+        .child(h_flex().w(14).flex_none().items_center().justify_center()
+          .child(div().size(7).rounded(4).border(1.5).border_color(t.dim)));
+    }
+    return h_flex()
+      .id(`dormant-${s.key}`)
+      .px(8)
+      .h(30)
+      .flex_none()
+      .rounded(8)
+      .items_center()
+      .gap(9)
+      .cursor_pointer()
+      .hover((el) => el.bg(t.hover))
+      .on_hover((on, cx) => {
+        if (on) this.hoveredDormant = s.key;
+        else if (this.hoveredDormant === s.key) this.hoveredDormant = null;
+        cx.notify();
+      })
+      .on_click((_e, cx) => this.wakeDormantSession(s, "resume", cx))
+      .on_mouse_down("right", (e) => {
+        e.stop_propagation?.();
+        openOverlay({
+          mod: "workspace-agents",
+          kind: "popup",
+          width: 210,
+          height: 126,
+          props: { sessionMenu: true, session: s },
+        });
+      })
+      .child(pic)
+      .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(labelText))
+      .when(hovered, (el) => el.child(
+        div()
+          .id(`del-${s.key}`)
+          .flex_none()
+          .p(2)
+          .rounded(4)
+          .text_color(t.dim)
+          .cursor_pointer()
+          .hover((el) => el.bg(t.raised).text_color(t.foreground))
+          .tooltip("Dismiss saved session")
+          .on_click((e, cx) => {
+            e.stop_propagation();
+            this.deleteSession(s.key, cx);
+          })
+          .child(svg("mods/workspace-chrome/x.svg").size(13)),
+      ))
+      .when(!hovered && Boolean(s.lastSeen), (el) => el.child(
+        div().flex_none().text_size(11).text_color(t.dim).child(duration(now - s.lastSeen)),
+      ))
+      .child(div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.dim));
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -219,6 +630,15 @@ export default class Agents extends View {
   render(cx) {
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
+    if (props()?.sessionMenu) return this.sessionMenu(t);
+    const pendingAction = shared("workspace-agents.session_action");
+    if (pendingAction?.seq && pendingAction.seq !== this.lastActionSeq) {
+      this.lastActionSeq = pendingAction.seq;
+      if (pendingAction.session) {
+        if (pendingAction.mode === "dismiss") this.deleteSession(pendingAction.session.key);
+        else this.wakeDormantSession(pendingAction.session, pendingAction.mode || "resume", cx);
+      }
+    }
     const collapsed = narrow();
     const sort = sortOf();
     let list = agents();
@@ -228,7 +648,11 @@ export default class Agents extends View {
     const shown = focused()?.agent;
     const now = Date.now();
     this.track(list, now);
-    const activeSpace = spaces().find((s) => s.active)?.id ?? focused()?.space ?? null;
+    const leads = leadPanes(panes());
+    const allSpaces = spaces() ?? [];
+    const tabs = new Map(allSpaces.flatMap((s) => s.tabs).map((tab) => [tab.id, tab]));
+    this.cachedSessions = this.syncSessions(list, all, tabs, leads, now);
+    const activeSpace = allSpaces.find((s) => s.active)?.id ?? focused()?.space ?? null;
     if (activeSpace) list = list.filter((a) => a.space === activeSpace);
     // A kept sub-agent (one with a pane) is in agents() too: where a tree shows
     // it, it gets no row of its own, unless it's pinned.
@@ -244,6 +668,13 @@ export default class Agents extends View {
     const rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
     setAgentOrder(list.map((a) => a.address));
+
+    const activeSpaceObj = allSpaces.find((s) => s.id === activeSpace);
+    const validTabIds = new Set((activeSpaceObj?.tabs ?? []).map((tab) => tab.id));
+    const liveTabKeys = new Set(list.map((a) => `${a.space}::${a.tab}`));
+    const dormant = activeSpace
+      ? Object.values(this.cachedSessions ?? {}).filter((s) => s.space === activeSpace && validTabIds.has(s.tab) && !liveTabKeys.has(s.key))
+      : [];
 
     const withKids = (a, i) => {
       const subs = collapsed ? [] : this.tree(all, a.address);
@@ -282,8 +713,6 @@ export default class Agents extends View {
     // agent's own title, never an automatic tab number unless two rows would
     // otherwise read the same.
     // Read the pane snapshot once: every host read copies the whole list into JS.
-    const leads = leadPanes(panes());
-    const tabs = new Map(spaces().flatMap(s => s.tabs).map(tab => [tab.id, tab]));
     const labels = new Map(list.map(a => {
       const tab = tabs.get(a.tab);
       const many = tabCounts.get(a.tab) > 1;
@@ -409,9 +838,13 @@ export default class Agents extends View {
           .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
           .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
     };
-    const rows = collapsed
-      ? list.flatMap(withKids)
-      : groups.flatMap((g) => (g.id.startsWith("sp-") ? g.members.flatMap(withKids) : [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]));
+    const dormantRows = dormant.map((s, idx) => this.dormantRow(s, t, now, collapsed, list.length + idx, cx));
+    const rows = [
+      ...(collapsed
+        ? list.flatMap(withKids)
+        : groups.flatMap((g) => (g.id.startsWith("sp-") ? g.members.flatMap(withKids) : [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]))),
+      ...dormantRows,
+    ];
 
     return v_flex()
       .size_full()
@@ -443,7 +876,7 @@ export default class Agents extends View {
             ),
         ),
       )
-      .when(list.length === 0 && !collapsed, (el) =>
+      .when(list.length === 0 && dormant.length === 0 && !collapsed, (el) =>
         el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
       )
       .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))

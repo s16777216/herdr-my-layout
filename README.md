@@ -8,8 +8,8 @@ Custom Herdr IDE layout (`my-layout.json`) featuring a flush, sharp-edged worksp
 
 - **Left Sidebar (`268px`)**:
   - `workspace-chrome` brand header (`46px`)
-  - `workspace-spaces`: Spaces list with a compact second-row agent status summary (`working`, `blocked`, `done`, `idle` where count > 0)
-  - `workspace-agents`: Active-workspace-only agents list (redundant space group header hidden)
+  - `workspace-spaces`: Spaces list with a compact second-row agent status summary (`working`, `blocked`, `done`, `idle` where count > 0, including dormant sessions)
+  - `workspace-agents`: Active-workspace-only agents list (redundant space group header hidden) with across-restart dormant session persistence and one-click resume
   - `sidebar-footer` (`42px`): `[+ Add machine]` + gear popup (`Mods`, `Settings`) anchored above the gear button
 - **Top Tab Bar (`42px`)**: `pierre-tree-files-tab` with file icons and quick actions.
 - **Main Work Body (`padding: 0`, `gap: 0`)**:

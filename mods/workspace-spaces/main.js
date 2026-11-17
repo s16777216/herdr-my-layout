@@ -448,11 +448,19 @@ export default class Spaces extends View {
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
     const counts = { working: 0, blocked: 0, done: 0, idle: 0 };
+    const liveTabKeys = new Set();
     for (const a of agents() ?? []) {
       if (a.space !== w.id) continue;
+      liveTabKeys.add(`${a.space}::${a.tab}`);
       if (a.status === "working" || a.status === "blocked" || a.status === "done" || a.status === "idle") {
         counts[a.status] += 1;
       } else {
+        counts.idle += 1;
+      }
+    }
+    const validTabIds = new Set((w.tabs ?? []).map(tab => tab.id));
+    for (const s of Object.values(shared("workspace.dormant_sessions") ?? {})) {
+      if (s.space === w.id && validTabIds.has(s.tab) && !liveTabKeys.has(s.key)) {
         counts.idle += 1;
       }
     }

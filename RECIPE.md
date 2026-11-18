@@ -22,7 +22,7 @@ The window (`root`, `"type": "row"`, `"background": "canvas"`, `"terminal_paddin
      - **Side Panel (`panel`, 368px, min 280px, max 900px, `"hidden": true` until toggled)**: A `stack` (`panel-body`, active `"files"`) switching between:
        - `files` (`pierre-tree-files`): Sharp-edged (`overflow_hidden`, `border_l(1)` `t.border`, no `rounded(10)`) file tree with 42px header, `ctrl-f` search bar, folder loading spinner (`spin(900)` + `Loading…`), and click-to-open in `pierre-tree-files-editor`.
        - `changes` (`git`): Sharp-edged (`K.panel` with `border_l(1)` `t.border` or `t.accent` when focused, no `rounded(10)`) commit graph and working-tree changes panel with a 42px header, collapsible `Graph` section (`git-graph.collapsed`), and no `View as list` toggle in the commit bar.
-   - **Status Bar (`status`, 28px)**: `agent-usage` mod displaying live quota/usage meters across providers.
+   - **Status Bar (`status`, 28px)**: `agent-usage` mod displaying live quota/usage meters (`X%(countdown)` when `pct > 0`, tooltip-free badges) across providers.
 
 ## How it behaves
 
@@ -67,3 +67,4 @@ The window (`root`, `"type": "row"`, `"background": "canvas"`, `"terminal_paddin
    - `workspace-spaces` shows a second status-count row only for spaces with live or dormant `agents > 0`, and `workspace-agents` shows only the active space's live and dormant agents (with click-to-resume) without a redundant space group header.
    - `sidebar-footer` renders `[+ Add machine]` + gear button in 42px, with the gear popup anchored above the button (`at`).
    - `work-body` has zero outer padding/gap, sharp 90-degree corners, and flush 42px header alignment across `main`, `Files`, and `Changes`.
+   - `agent-usage` renders `X%(countdown)` on status bar badges when `pct > 0` (omitting countdown at `0%`) with no tooltip on hover.

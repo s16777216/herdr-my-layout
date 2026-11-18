@@ -70,6 +70,19 @@ function fmtResetDetail(ms) {
   return `Resets in ${parts.join(" ")} (${clock})`;
 }
 
+function fmtShortCountdown(ms) {
+  if (!ms) return "";
+  const diffMs = ms - Date.now();
+  if (diffMs <= 0) return "";
+  const diffMin = Math.ceil(diffMs / 60000);
+  const days = Math.floor(diffMin / 1440);
+  const hours = Math.floor((diffMin % 1440) / 60);
+  const mins = diffMin % 60;
+  if (days > 0) return hours > 0 ? `${days}d${hours}h` : `${days}d`;
+  if (hours > 0) return mins > 0 ? `${hours}h${mins}m` : `${hours}h`;
+  return `${mins}m`;
+}
+
 async function fetchClaudeUsage(h) {
   const raw = await readTextFile(`${h}/.claude/.credentials.json`);
   if (!raw) return null;
@@ -543,7 +556,10 @@ export default class MyWorkspaceStatus extends View {
 
   usageBadge(provider, name, iconPath, usage, err, t) {
     if (!usage && !err && !this.loading) return null;
-    const p5 = usage?.fiveHour ?? usage?.sevenDay ?? null;
+    const useFive = typeof usage?.fiveHour === "number";
+    const p5 = useFive ? usage.fiveHour : (usage?.sevenDay ?? null);
+    const resetMs = useFive ? usage?.fiveHourResetMs : usage?.sevenDayResetMs;
+    const countdown = (typeof p5 === "number" && p5 > 0) ? fmtShortCountdown(resetMs) : "";
 
     return h_flex()
       .id(`usage-${provider}`)
@@ -553,7 +569,6 @@ export default class MyWorkspaceStatus extends View {
       .rounded(5)
       .items_center()
       .cursor_pointer()
-      .tooltip(`${name} OAuth Usage · Click for details`)
       .hover((s) => s.bg(t.hover))
       .on_mouse_down("left", (e, cx) => {
         cx.stop_propagation();
@@ -563,7 +578,14 @@ export default class MyWorkspaceStatus extends View {
       .when(Boolean(usage) && p5 !== null, (el) =>
         el
           .child(this.progressBar(p5, MINI_BAR_W, 5, provider, t))
-          .child(div().text_size(11.5).text_color(this.pctColor(p5, t)).child(`${p5}%`)),
+          .child(
+            h_flex()
+              .items_center()
+              .child(div().text_size(11.5).text_color(this.pctColor(p5, t)).child(`${p5}%`))
+              .when(Boolean(countdown), (e2) =>
+                e2.child(div().text_size(11).text_color(t.dim).child(`(${countdown})`)),
+              ),
+          ),
       )
       .when(!usage && Boolean(err), (el) => el.child(div().text_size(11).text_color(t.blocked).child("err")))
       .when(!usage && !err, (el) => el.child(div().text_size(11).text_color(t.dim).child("…")));

@@ -35,8 +35,9 @@ The window (`root`, `"type": "row"`, `"background": "canvas"`, `"terminal_paddin
 - **Clicks, Keys, and Hover**:
   - Clicking a space in `workspace-spaces` selects it (`space.select`); dragging reorders within the same machine (`space.move`).
   - Clicking `+ Add machine` opens `machine-add`; clicking the gear icon opens the `sidebar-footer` popup menu (`Mods`, `Settings`).
-  - Clicking a file in `pierre-tree-files` opens or focuses `pierre-tree-files-editor` (`ctrl-s` / `cmd-s` saves via `bind_keys` + `on_action`); `.md`/`.markdown`/`.mdx` files default to `Preview` (`TextView.markdown`) with a `Preview | Source` toggle and clickable links.
-  - Right-clicking a file, folder, or empty space in `pierre-tree-files` opens `pierre-tree-files-menu` (open, copy path/relative path, reveal in Explorer, open terminal here, new file/folder, rename, delete).
+  - Clicking a file in `pierre-tree-files` focuses an existing active-space `pierre-tree-files-editor` tab/pane (`shared("pierre-tree-files.open_files")`) or opens a new tab if not yet open, while highlighting the focused file in the tree; `Ctrl+Click` / `Cmd+Click` / `Alt+Click` or clicking the hover `panel-right` icon splits right inside the active tab without duplicating open split panes. Inside the editor, `ctrl-s` / `cmd-s` saves via `bind_keys` + `on_action`, and `.md`/`.markdown`/`.mdx` files default to `Preview` (`TextView.markdown`) with a `Preview | Source` toggle and clickable links.
+  - File editor tabs (`isEditorTab`) in `pierre-tree-files-tab` ignore double-click `tab.rename` and show an editor-specific right-click popup (`New tab`, `Close`, omitting `Rename`).
+  - Right-clicking a file, folder, or empty space in `pierre-tree-files` opens `pierre-tree-files-menu` (open, split right/down, copy path/relative path, reveal in Explorer, open terminal here, new file/folder, rename, delete).
 
 ## Built from
 

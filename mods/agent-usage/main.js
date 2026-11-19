@@ -3,7 +3,7 @@
 // and Codex rate-limit reset credit redemption.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { spaces, agents, theme, run, window, keys, home, appHome, exec, readTextFile, openOverlay, closeOverlay, props, shared, setShared } from "herdr";
+import { spaces, agents, theme, run, window, keys, home, appHome, exec, readTextFile, openOverlay, closeOverlay, props, shared, setShared, updates } from "herdr";
 
 const REFRESH_MS = 180_000; // 3 minutes
 const SHARED_KEY = "agent-usage.usage";
@@ -384,7 +384,8 @@ export default class MyWorkspaceStatus extends View {
     this.confirmReset = false;
     this.redeemingReset = false;
     this.resetNotice = null; // { ok: boolean, text: string }
-    this.isPopup = Boolean(props()?.provider);
+    this.isPopup = Boolean(props()?.provider || props()?.gearMenu);
+    if (props()?.gearMenu) return;
     if (this.isPopup) {
       this.handle = cx.focus_handle();
       this.handle.focus();
@@ -855,8 +856,44 @@ export default class MyWorkspaceStatus extends View {
       );
   }
 
+  renderGearMenu(t) {
+    const hasUpdate = Boolean(updates()?.app?.ready);
+    const row = (id, iconName, text, action, { badge = false, dim = false } = {}) =>
+      h_flex()
+        .id(id)
+        .h(28)
+        .px(10)
+        .gap(9)
+        .items_center()
+        .rounded(6)
+        .cursor_pointer()
+        .text_size(12.5)
+        .text_color(dim ? t.dim : t.foreground)
+        .hover((s) => s.bg(t.hover))
+        .on_click(() => {
+          closeOverlay(props()?.overlay);
+          action();
+        })
+        .child(svg(`mods/workspace-chrome/${iconName}.svg`).size(14).flex_none().text_color(t.muted))
+        .child(div().flex_1().child(text))
+        .when(badge, (el) => el.child(div().size(6).rounded_full().bg(t.accent)));
+
+    return v_flex()
+      .id("status-gear-menu")
+      .w_full()
+      .p(4)
+      .bg(t.popover)
+      .text_color(t.foreground)
+      .child(row("sg-mods", "layers", "Mods", () => run("mod.open", { name: "mod-manager" })))
+      .child(row("sg-settings", "settings", "Settings", () => run("app.settings"), { badge: hasUpdate }))
+      .child(row("sg-machine", "plus", "Add machine", () => run("mod.open", { name: "machine-add" }), { dim: true }));
+  }
+
   render() {
     const t = theme();
+    if (props()?.gearMenu) {
+      return this.renderGearMenu(t);
+    }
     const provider = props()?.provider;
     if (provider === "claude" || provider === "codex" || provider === "agy") {
       return this.renderPopover(provider, t);
@@ -865,22 +902,67 @@ export default class MyWorkspaceStatus extends View {
     const space = spaces().find((s) => s.active);
     const list = agents();
     const needs = list.filter((a) => a.status === "blocked").length;
+    const hasUpdate = Boolean(updates()?.app?.ready);
     const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
     const st = this.state();
     const claudeEl = this.usageBadge("claude", "Claude Code", "icons/claude.svg", st.claude, st.claudeErr, t);
     const codexEl = this.usageBadge("codex", "Codex", "icons/codex.svg", st.codex, st.codexErr, t);
     const agyEl = this.usageBadge("agy", "Antigravity", "icons/antigravity.svg", st.agy, st.agyErr, t);
 
+    const gearBtn = h_flex()
+      .id("status-gear")
+      .relative()
+      .size(22)
+      .flex_none()
+      .items_center()
+      .justify_center()
+      .rounded(5)
+      .cursor_pointer()
+      .text_color(t.muted)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .tooltip("Mods, Settings & Add machine")
+      .on_mouse_down("left", (e) => {
+        if (e?.position && e?.local_position) {
+          this.gearOrigin = {
+            x: e.position.x - e.local_position.x,
+            y: e.position.y - e.local_position.y,
+          };
+        }
+      })
+      .on_click((e) => {
+        const popupW = 175;
+        const popupH = 96;
+        const origin = (e?.position && e?.local_position)
+          ? { x: e.position.x - e.local_position.x, y: e.position.y - e.local_position.y }
+          : this.gearOrigin;
+        const at = origin
+          ? { x: Math.max(8, origin.x), y: Math.max(8, origin.y - popupH - 6) }
+          : "pointer";
+        openOverlay({
+          mod: "agent-usage",
+          kind: "popup",
+          width: popupW,
+          height: popupH,
+          at,
+          props: { gearMenu: true },
+        });
+      })
+      .child(svg("mods/workspace-chrome/settings.svg").size(13).flex_none())
+      .when(hasUpdate, (el) => el.child(div().absolute().top(3).right(3).size(5).rounded_full().bg(t.accent)));
+
     return h_flex()
       .size_full()
-      .px(14)
-      .gap(14)
+      .pl(8)
+      .pr(14)
+      .gap(12)
       .items_center()
       .bg(t.chrome)
       .border_t(1)
       .border_color(t.border)
       .text_size(11.8)
       .text_color(t.muted)
+      .child(gearBtn)
+      .child(div().w(1).h(12).bg(t.border).flex_none())
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), (el) => el.child(label("branch", space.branch)))
       .child(

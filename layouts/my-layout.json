@@ -4,167 +4,193 @@
     "name": "main",
     "version": "0.1.14"
   },
-  "type": "row",
+  "type": "column",
+  "resizable": false,
   "children": [
     {
-      "id": "sidebar",
-      "type": "column",
+      "id": "workspace-row",
+      "type": "row",
+      "divider": {
+        "width": 1,
+        "color": "border"
+      },
       "children": [
         {
-          "id": "brand",
+          "id": "activity-bar-left",
           "type": "block",
           "content": {
-            "mod": "workspace-chrome"
+            "mod": "activity-bar-left"
           },
           "size": {
-            "px": 46
+            "px": 44
           },
+          "resizable": false,
           "window_drag": true
         },
         {
-          "id": "sidebar-lists",
+          "id": "sidebar",
           "type": "column",
           "children": [
             {
-              "id": "spaces",
+              "id": "brand",
               "type": "block",
               "content": {
-                "mod": "workspace-spaces"
+                "mod": "workspace-chrome"
               },
               "size": {
-                "weight": 1
+                "px": 46
               },
-              "min": 90
+              "window_drag": true
             },
             {
-              "id": "agents",
-              "type": "block",
-              "content": {
-                "mod": "workspace-agents"
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
-            }
-          ]
-        },
-        {
-          "id": "sidebar-footer",
-          "type": "block",
-          "content": {
-            "mod": "sidebar-footer"
-          },
-          "size": {
-            "px": 42
-          }
-        }
-      ],
-      "size": {
-        "px": 268
-      },
-      "min": 44,
-      "max": 480,
-      "background": "chrome",
-      "resizable": false
-    },
-    {
-      "id": "work",
-      "type": "column",
-      "children": [
-        {
-          "id": "tabs",
-          "type": "block",
-          "content": {
-            "mod": "pierre-tree-files-tab"
-          },
-          "size": {
-            "px": 42
-          },
-          "window_drag": true
-        },
-        {
-          "id": "work-body",
-          "type": "row",
-          "children": [
-            {
-              "id": "main",
-              "type": "block",
-              "content": {
-                "tab": "active",
-                "pane": {
-                  "header": {
-                    "content": {
-                      "mod": "pane"
-                    },
-                    "reveal": "always",
-                    "height": 41,
-                    "position": "top"
-                  },
-                  "background": "background",
-                  "border": {
-                    "width": 1,
-                    "color": "border"
-                  },
-                  "focus": {
-                    "width": 1,
-                    "color": "accent"
-                  },
-                  "radius": 0,
-                  "gap": 0,
-                  "lone": true
-                }
-              }
-            },
-            {
-              "id": "panel",
+              "id": "sidebar-lists",
               "type": "column",
               "children": [
                 {
-                  "id": "panel-body",
-                  "type": "stack",
-                  "children": [
-                    {
-                      "id": "files",
-                      "type": "block",
-                      "content": {
-                        "mod": "pierre-tree-files"
-                      }
-                    },
-                    {
-                      "id": "changes",
-                      "type": "block",
-                      "content": {
-                        "mod": "git"
-                      }
-                    }
-                  ],
-                  "active": "files"
+                  "id": "spaces",
+                  "type": "block",
+                  "content": {
+                    "mod": "workspace-spaces"
+                  },
+                  "size": {
+                    "weight": 1
+                  },
+                  "min": 90
+                },
+                {
+                  "id": "agents",
+                  "type": "block",
+                  "content": {
+                    "mod": "workspace-agents"
+                  },
+                  "size": {
+                    "weight": 1
+                  },
+                  "min": 90
                 }
-              ],
-              "size": {
-                "px": 368
-              },
-              "min": 280,
-              "max": 900,
-              "hidden": true
+              ]
             }
           ],
-          "padding": 0,
-          "gap": 0
+          "size": {
+            "px": 240
+          },
+          "min": 0,
+          "max": 480,
+          "background": "chrome",
+          "resizable": false,
+          "hidden": false
         },
         {
-          "id": "status",
+          "id": "work",
+          "type": "column",
+          "children": [
+            {
+              "id": "tabs",
+              "type": "block",
+              "content": {
+                "mod": "pierre-tree-files-tab"
+              },
+              "size": {
+                "px": 42
+              },
+              "window_drag": true
+            },
+            {
+              "id": "work-body",
+              "type": "row",
+              "children": [
+                {
+                  "id": "main",
+                  "type": "block",
+                  "content": {
+                    "tab": "active",
+                    "pane": {
+                      "header": {
+                        "content": {
+                          "mod": "pane"
+                        },
+                        "reveal": "always",
+                        "height": 41,
+                        "position": "top"
+                      },
+                      "background": "background",
+                      "border": {
+                        "width": 1,
+                        "color": "border"
+                      },
+                      "focus": {
+                        "width": 1,
+                        "color": "accent"
+                      },
+                      "radius": 0,
+                      "gap": 0,
+                      "lone": true
+                    }
+                  }
+                },
+                {
+                  "id": "panel",
+                  "type": "column",
+                  "children": [
+                    {
+                      "id": "panel-body",
+                      "type": "stack",
+                      "children": [
+                        {
+                          "id": "files",
+                          "type": "block",
+                          "content": {
+                            "mod": "pierre-tree-files"
+                          }
+                        },
+                        {
+                          "id": "changes",
+                          "type": "block",
+                          "content": {
+                            "mod": "git"
+                          }
+                        }
+                      ],
+                      "active": "files"
+                    }
+                  ],
+                  "size": {
+                    "px": 320
+                  },
+                  "min": 240,
+                  "max": 900,
+                  "hidden": true
+                }
+              ],
+              "padding": 0,
+              "gap": 0
+            }
+          ],
+          "resizable": false
+        },
+        {
+          "id": "activity-bar-right",
           "type": "block",
           "content": {
-            "mod": "agent-usage"
+            "mod": "activity-bar-right"
           },
           "size": {
-            "px": 28
-          }
+            "px": 44
+          },
+          "resizable": false,
+          "window_drag": true
         }
-      ],
-      "resizable": false
+      ]
+    },
+    {
+      "id": "status",
+      "type": "block",
+      "content": {
+        "mod": "agent-usage"
+      },
+      "size": {
+        "px": 28
+      }
     }
   ],
   "background": "canvas",
@@ -172,10 +198,6 @@
     14,
     12
   ],
-  "divider": {
-    "width": 1,
-    "color": "border"
-  },
   "titlebar": "none",
   "traffic_lights": [
     12,

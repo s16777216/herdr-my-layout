@@ -8,6 +8,17 @@
   "resizable": false,
   "children": [
     {
+      "id": "tabs",
+      "type": "block",
+      "content": {
+        "mod": "pierre-tree-files-tab"
+      },
+      "size": {
+        "px": 42
+      },
+      "window_drag": true
+    },
+    {
       "id": "workspace-row",
       "type": "row",
       "divider": {
@@ -24,8 +35,7 @@
           "size": {
             "px": 44
           },
-          "resizable": false,
-          "window_drag": true
+          "resizable": false
         },
         {
           "id": "sidebar",
@@ -81,92 +91,66 @@
           "hidden": false
         },
         {
-          "id": "work",
+          "id": "main",
+          "type": "block",
+          "content": {
+            "tab": "active",
+            "pane": {
+              "header": {
+                "content": {
+                  "mod": "pane"
+                },
+                "reveal": "always",
+                "height": 41,
+                "position": "top"
+              },
+              "background": "background",
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "focus": {
+                "width": 1,
+                "color": "accent"
+              },
+              "radius": 0,
+              "gap": 0,
+              "lone": true
+            }
+          }
+        },
+        {
+          "id": "panel",
           "type": "column",
           "children": [
             {
-              "id": "tabs",
-              "type": "block",
-              "content": {
-                "mod": "pierre-tree-files-tab"
-              },
-              "size": {
-                "px": 42
-              },
-              "window_drag": true
-            },
-            {
-              "id": "work-body",
-              "type": "row",
+              "id": "panel-body",
+              "type": "stack",
               "children": [
                 {
-                  "id": "main",
+                  "id": "files",
                   "type": "block",
                   "content": {
-                    "tab": "active",
-                    "pane": {
-                      "header": {
-                        "content": {
-                          "mod": "pane"
-                        },
-                        "reveal": "always",
-                        "height": 41,
-                        "position": "top"
-                      },
-                      "background": "background",
-                      "border": {
-                        "width": 1,
-                        "color": "border"
-                      },
-                      "focus": {
-                        "width": 1,
-                        "color": "accent"
-                      },
-                      "radius": 0,
-                      "gap": 0,
-                      "lone": true
-                    }
+                    "mod": "pierre-tree-files"
                   }
                 },
                 {
-                  "id": "panel",
-                  "type": "column",
-                  "children": [
-                    {
-                      "id": "panel-body",
-                      "type": "stack",
-                      "children": [
-                        {
-                          "id": "files",
-                          "type": "block",
-                          "content": {
-                            "mod": "pierre-tree-files"
-                          }
-                        },
-                        {
-                          "id": "changes",
-                          "type": "block",
-                          "content": {
-                            "mod": "git"
-                          }
-                        }
-                      ],
-                      "active": "files"
-                    }
-                  ],
-                  "size": {
-                    "px": 320
-                  },
-                  "min": 240,
-                  "max": 900,
-                  "hidden": true
+                  "id": "changes",
+                  "type": "block",
+                  "content": {
+                    "mod": "git"
+                  }
                 }
               ],
-              "padding": 0,
-              "gap": 0
+              "active": "files"
             }
           ],
-          "resizable": false
+          "size": {
+            "px": 320
+          },
+          "min": 240,
+          "max": 900,
+          "hidden": true
         },
         {
           "id": "activity-bar-right",
@@ -177,8 +161,7 @@
           "size": {
             "px": 44
           },
-          "resizable": false,
-          "window_drag": true
+          "resizable": false
         }
       ]
     },

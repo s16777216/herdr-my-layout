@@ -111,16 +111,6 @@ export default class LeftActivityBar extends View {
           agentBadge
         )
       )
-      .child(
-        item(
-          "btn-act-search",
-          "search",
-          "搜尋命令與專案 (Search)",
-          false,
-          () => run("mod.open", { name: "picker" }),
-          null
-        )
-      )
       .child(div().flex_1());
   }
 }

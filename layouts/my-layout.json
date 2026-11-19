@@ -8,10 +8,10 @@
   "resizable": false,
   "children": [
     {
-      "id": "tabs",
+      "id": "top",
       "type": "block",
       "content": {
-        "mod": "pierre-tree-files-tab"
+        "mod": "topbar"
       },
       "size": {
         "px": 42
@@ -74,33 +74,51 @@
           "hidden": false
         },
         {
-          "id": "main",
-          "type": "block",
-          "content": {
-            "tab": "active",
-            "pane": {
-              "header": {
-                "content": {
-                  "mod": "pane"
-                },
-                "reveal": "always",
-                "height": 41,
-                "position": "top"
+          "id": "work",
+          "type": "column",
+          "resizable": false,
+          "children": [
+            {
+              "id": "tabs",
+              "type": "block",
+              "content": {
+                "mod": "pierre-tree-files-tab"
               },
-              "background": "background",
-              "border": {
-                "width": 1,
-                "color": "border"
+              "size": {
+                "px": 42
               },
-              "focus": {
-                "width": 1,
-                "color": "accent"
-              },
-              "radius": 0,
-              "gap": 0,
-              "lone": true
+              "window_drag": true
+            },
+            {
+              "id": "main",
+              "type": "block",
+              "content": {
+                "tab": "active",
+                "pane": {
+                  "header": {
+                    "content": {
+                      "mod": "pane"
+                    },
+                    "reveal": "always",
+                    "height": 41,
+                    "position": "top"
+                  },
+                  "background": "background",
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "focus": {
+                    "width": 1,
+                    "color": "accent"
+                  },
+                  "radius": 0,
+                  "gap": 0,
+                  "lone": true
+                }
+              }
             }
-          }
+          ]
         },
         {
           "id": "panel",

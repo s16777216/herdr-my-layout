@@ -42,43 +42,26 @@
           "type": "column",
           "children": [
             {
-              "id": "brand",
+              "id": "spaces",
               "type": "block",
               "content": {
-                "mod": "workspace-chrome"
+                "mod": "workspace-spaces"
               },
               "size": {
-                "px": 46
+                "weight": 1
               },
-              "window_drag": true
+              "min": 90
             },
             {
-              "id": "sidebar-lists",
-              "type": "column",
-              "children": [
-                {
-                  "id": "spaces",
-                  "type": "block",
-                  "content": {
-                    "mod": "workspace-spaces"
-                  },
-                  "size": {
-                    "weight": 1
-                  },
-                  "min": 90
-                },
-                {
-                  "id": "agents",
-                  "type": "block",
-                  "content": {
-                    "mod": "workspace-agents"
-                  },
-                  "size": {
-                    "weight": 1
-                  },
-                  "min": 90
-                }
-              ]
+              "id": "agents",
+              "type": "block",
+              "content": {
+                "mod": "workspace-agents"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 90
             }
           ],
           "size": {

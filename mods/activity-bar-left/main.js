@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, run, layout, agents, shared, setShared } from "herdr";
+import { theme, run, layout, agents, shared, setShared, updates } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -95,6 +95,17 @@ export default class LeftActivityBar extends View {
       }
     };
 
+    const hasUpdate = Boolean(updates()?.app?.ready);
+    const updateDot = hasUpdate
+      ? div()
+          .absolute()
+          .top(7)
+          .right(7)
+          .size(6)
+          .rounded(3)
+          .bg(t.accent)
+      : null;
+
     return v_flex()
       .id("activity-bar-left")
       .size_full()
@@ -111,6 +122,16 @@ export default class LeftActivityBar extends View {
           agentBadge
         )
       )
-      .child(div().flex_1());
+      .child(div().flex_1())
+      .child(
+        item(
+          "btn-act-settings",
+          "settings",
+          "設定 (Settings)",
+          false,
+          () => run("app.settings"),
+          updateDot
+        )
+      );
   }
 }

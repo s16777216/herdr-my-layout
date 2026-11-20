@@ -108,15 +108,6 @@ export default class RightActivityBar extends View {
           () => run("mod.open", { name: "mod-manager" })
         )
       )
-      .child(div().flex_1())
-      .child(
-        item(
-          "btn-act-settings",
-          "settings",
-          "設定 (Settings)",
-          false,
-          () => run("app.settings")
-        )
-      );
+      .child(div().flex_1());
   }
 }

@@ -952,7 +952,7 @@ export default class MyWorkspaceStatus extends View {
 
     return h_flex()
       .size_full()
-      .pl(8)
+      .pl(12)
       .pr(14)
       .gap(12)
       .items_center()
@@ -961,8 +961,6 @@ export default class MyWorkspaceStatus extends View {
       .border_color(t.border)
       .text_size(11.8)
       .text_color(t.muted)
-      .child(gearBtn)
-      .child(div().w(1).h(12).bg(t.border).flex_none())
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), (el) => el.child(label("branch", space.branch)))
       .child(

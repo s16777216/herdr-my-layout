@@ -105,13 +105,7 @@ export default class RightActivityBar extends View {
           "layers",
           "模組管理 (Mods)",
           false,
-          () =>
-            openOverlay({
-              mod: "mod-manager",
-              kind: "popup",
-              width: 560,
-              height: 420
-            })
+          () => run("mod.open", { name: "mod-manager" })
         )
       )
       .child(div().flex_1())

@@ -53,7 +53,7 @@ export default class RightActivityBar extends View {
         )
         // Icon
         .child(
-          svg(`mods/workspace-chrome/${icon}.svg`)
+          svg(icon.startsWith("mods/") ? icon : `mods/workspace-chrome/${icon}.svg`)
             .size(20)
             .text_color(active ? t.foreground : t.dim)
         )
@@ -97,6 +97,15 @@ export default class RightActivityBar extends View {
           "版本控制與變更 (Source Control)",
           isPanelOpen && activeChild === "changes",
           () => togglePanel("changes")
+        )
+      )
+      .child(
+        item(
+          "btn-act-openspec",
+          "mods/openspec/icons/list-todo.svg",
+          "OpenSpec 規格與變更 (OpenSpec Changes)",
+          isPanelOpen && activeChild === "openspec",
+          () => togglePanel("openspec")
         )
       )
       .child(div().flex_1());

@@ -141,6 +141,13 @@
                   "content": {
                     "mod": "git"
                   }
+                },
+                {
+                  "id": "openspec",
+                  "type": "block",
+                  "content": {
+                    "mod": "openspec"
+                  }
                 }
               ],
               "active": "files"

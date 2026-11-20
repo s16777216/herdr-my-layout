@@ -125,6 +125,15 @@ export default class LeftActivityBar extends View {
       .child(div().flex_1())
       .child(
         item(
+          "btn-act-mods",
+          "layers",
+          "模組管理 (Mod Manager)",
+          false,
+          () => run("mod.open", { name: "mod-manager" })
+        )
+      )
+      .child(
+        item(
           "btn-act-settings",
           "settings",
           "設定 (Settings)",

@@ -99,15 +99,6 @@ export default class RightActivityBar extends View {
           () => togglePanel("changes")
         )
       )
-      .child(
-        item(
-          "btn-act-mods",
-          "layers",
-          "模組管理 (Mods)",
-          false,
-          () => run("mod.open", { name: "mod-manager" })
-        )
-      )
       .child(div().flex_1());
   }
 }

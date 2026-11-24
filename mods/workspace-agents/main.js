@@ -585,8 +585,8 @@ export default class Agents extends View {
         cx.notify();
       })
       .on_click((_e, cx) => this.wakeDormantSession(s, "resume", cx))
-      .on_mouse_down("right", (e) => {
-        e.stop_propagation?.();
+      .on_mouse_down("right", (_e, cx) => {
+        cx.stop_propagation();
         openOverlay({
           mod: "workspace-agents",
           kind: "popup",
@@ -609,8 +609,9 @@ export default class Agents extends View {
               .cursor_pointer()
               .hover((el) => el.bg(t.raised).text_color(t.foreground))
               .tooltip("查看上次輸出")
-              .on_click((e, cx) => {
-                e.stop_propagation();
+              .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+              .on_click((_e, cx) => {
+                cx.stop_propagation();
                 openOverlay({
                   mod: "workspace-agents",
                   kind: "dialog",
@@ -631,8 +632,9 @@ export default class Agents extends View {
               .cursor_pointer()
               .hover((el) => el.bg(t.raised).text_color(t.foreground))
               .tooltip("移除紀錄")
-              .on_click((e, cx) => {
-                e.stop_propagation();
+              .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+              .on_click((_e, cx) => {
+                cx.stop_propagation();
                 this.deleteSession(s.key, cx);
               })
               .child(svg("mods/workspace-chrome/x.svg").size(13))

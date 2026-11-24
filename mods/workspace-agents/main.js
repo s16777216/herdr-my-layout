@@ -158,6 +158,7 @@ function buildAgentLaunch(program, session, mode = "resume") {
   else if (key === "claude-code") baseCmd = "claude";
 
   if (mode === "new") {
+    if (baseCmd === "codex") return { cmd: "codex --no-daemon", argv: ["codex", "--no-daemon"] };
     return { cmd: baseCmd, argv: [baseCmd] };
   }
 
@@ -173,8 +174,12 @@ function buildAgentLaunch(program, session, mode = "resume") {
     return { cmd: "agy --continue", argv: ["agy", "--continue"] };
   }
   if (baseCmd === "codex") {
-    if (isRealId) return { cmd: `codex resume ${sid}`, argv: ["codex", "resume", sid] };
-    return { cmd: "codex resume --last", argv: ["codex", "resume", "--last"] };
+    if (isRealId) return { cmd: `codex --no-daemon resume ${sid}`, argv: ["codex", "--no-daemon", "resume", sid] };
+    return { cmd: "codex --no-daemon resume --last", argv: ["codex", "--no-daemon", "resume", "--last"] };
+  }
+  if (baseCmd === "opencode") {
+    if (isRealId) return { cmd: `opencode --session ${sid}`, argv: ["opencode", "--session", sid] };
+    return { cmd: "opencode --continue", argv: ["opencode", "--continue"] };
   }
   if (baseCmd === "pi") {
     if (isRealId) return { cmd: `pi --session ${sid}`, argv: ["pi", "--session", sid] };
@@ -314,6 +319,7 @@ export default class Agents extends View {
         space: a.space,
         space_name: a.space_name,
         tab: a.tab,
+        address: a.address,
         cwd: term?.cwd ?? null,
         launchCmd: cli.cmd,
         launchArgv: cli.argv,
@@ -326,6 +332,7 @@ export default class Agents extends View {
         prev.displayName !== next.displayName ||
         prev.tabName !== next.tabName ||
         prev.cwd !== next.cwd ||
+        prev.address !== next.address ||
         prev.program?.key !== next.program?.key ||
         now - (prev.lastSeen ?? 0) > 60000
       ) {
@@ -334,20 +341,17 @@ export default class Agents extends View {
       }
     }
 
-    if (this.seenLiveKeys) {
-      for (const seenKey of [...this.seenLiveKeys]) {
-        if (!currentLiveKeys.has(seenKey)) {
-          this.seenLiveKeys.delete(seenKey);
-          if (sessions[seenKey]) {
-            delete sessions[seenKey];
-            dirty = true;
-          }
-        }
+    // Keep sessions as history! Prune only if exceeding 60 entries or older than 30 days
+    const entries = Object.entries(sessions);
+    if (entries.length > 60) {
+      entries.sort((a, b) => (b[1].lastSeen ?? 0) - (a[1].lastSeen ?? 0));
+      for (let i = 60; i < entries.length; i++) {
+        delete sessions[entries[i][0]];
+        dirty = true;
       }
     }
-
     for (const [k, s] of Object.entries(sessions)) {
-      if (!s.program?.agent || (tabsMap.size > 0 && !tabsMap.has(s.tab)) || now - s.lastSeen > 30 * 86400000) {
+      if (now - (s.lastSeen ?? 0) > 30 * 86400000) {
         delete sessions[k];
         dirty = true;
       }
@@ -360,7 +364,6 @@ export default class Agents extends View {
   wakeDormantSession(s, mode = "resume", cx) {
     cx.spawn(async (cx) => {
       if (s.space) run("space.select", { id: s.space });
-      if (s.tab) run("tab.select", { id: s.tab });
 
       if (mode === "resume" && (!s.sessionId || (!s.sessionId.includes("-") && s.sessionId.length < 16))) {
         const realId = await resolveRealSessionId(s.program?.key, s.cwd, s.displayName || s.title);
@@ -382,18 +385,18 @@ export default class Agents extends View {
       const pane = allPanes.find((p) => p.tab === s.tab && p.terminal);
 
       if (pane?.terminal) {
+        if (s.tab) run("tab.select", { id: s.tab });
         run("pane.focus", { pane: pane.pane });
         const term = (terminals() ?? []).find((t) => t.address === pane.terminal);
         if (term && (!term.status || term.status.state !== "working")) {
-          notify({ title: `接續 ${s.program?.name || "Agent"}`, body: "正在載入歷史對話..." });
+          notify({ title: `接續 ${s.program?.name || "Session"}`, body: "正在載入歷史對話..." });
           await hc(["send", term.address, launch.cmd]).catch(() => {});
         }
       } else {
-        this.deleteSession(s.key, cx);
-        notify({ title: `接續 ${s.program?.name || "Agent"}`, body: "開啟新分頁..." });
+        notify({ title: `接續 ${s.program?.name || "Session"}`, body: "開啟新分頁並接續對話..." });
         run("tab.new", {
           space: s.space,
-          name: s.displayName || s.tabName || s.program?.name || "Agent",
+          name: s.displayName || s.tabName || s.program?.name || "Session",
           folder: s.cwd || undefined,
           argv: launch.argv,
         });
@@ -433,9 +436,122 @@ export default class Agents extends View {
         .child(div().flex_1().child(item.label))));
   }
 
+  outputDialog(t, s, cx) {
+    if (!this.outputTextCache) this.outputTextCache = new Map();
+    const cacheKey = s.address || s.key;
+    let outputText = this.outputTextCache.get(cacheKey);
+
+    if (outputText === undefined) {
+      this.outputTextCache.set(cacheKey, "正在載入上次終端輸出...");
+      cx.spawn(async (cx) => {
+        try {
+          let text = "";
+          if (s.address) {
+            const res = await hc(["read", s.address]).catch(() => null);
+            text = res?.text ?? (typeof res === "string" ? res : "");
+          }
+          if (!text && s.lastOutput) {
+            text = s.lastOutput;
+          }
+          this.outputTextCache.set(cacheKey, text ? text.trim() : "（此會話無留存終端輸出）");
+        } catch (err) {
+          this.outputTextCache.set(cacheKey, "（讀取輸出失敗）");
+        }
+        cx.notify();
+      });
+    }
+
+    const titleText = s.displayName || s.tabName || s.title || s.program?.name || "Session";
+    const subText = s.cwd ? `${s.cwd}${s.shortTag ? ` · ${s.shortTag}` : ""}` : (s.shortTag ? `ID: ${s.shortTag}` : "");
+
+    return v_flex()
+      .size_full()
+      .bg(t.chrome)
+      .p(16)
+      .gap(12)
+      .child(
+        h_flex()
+          .w_full()
+          .justify_between()
+          .items_center()
+          .child(
+            h_flex()
+              .gap(10)
+              .items_center()
+              .child(icon(s.program, 18, t.foreground) || svg("mods/workspace-chrome/terminal.svg").size(18).text_color(t.foreground))
+              .child(
+                v_flex()
+                  .gap(2)
+                  .child(div().text_size(14).font_bold().text_color(t.foreground).child(titleText))
+                  .when(Boolean(subText), (el) => el.child(div().text_size(11).text_color(t.dim).child(subText)))
+              )
+          )
+          .child(
+            h_flex()
+              .gap(8)
+              .items_center()
+              .child(
+                h_flex()
+                  .id("btn-dialog-resume")
+                  .px(10)
+                  .h(28)
+                  .rounded(6)
+                  .bg(t.accent)
+                  .text_color(t.solid_foreground ?? "#000000")
+                  .text_size(12)
+                  .font_medium()
+                  .items_center()
+                  .gap(5)
+                  .cursor_pointer()
+                  .hover((el) => el.opacity(0.88))
+                  .on_click(() => {
+                    closeOverlay(props().overlay);
+                    this.wakeDormantSession(s, "resume", cx);
+                  })
+                  .child(svg("mods/workspace-chrome/terminal.svg").size(12).text_color(t.solid_foreground ?? "#000000"))
+                  .child("接續對話")
+              )
+              .child(
+                div()
+                  .id("btn-dialog-close")
+                  .size(28)
+                  .rounded(6)
+                  .items_center()
+                  .justify_center()
+                  .cursor_pointer()
+                  .text_color(t.dim)
+                  .hover((el) => el.bg(t.hover).text_color(t.foreground))
+                  .on_click(() => closeOverlay(props().overlay))
+                  .child(svg("mods/workspace-chrome/x.svg").size(14))
+              )
+          )
+      )
+      .child(
+        v_flex()
+          .flex_1()
+          .min_h(0)
+          .w_full()
+          .bg(t.canvas ?? "#0e1117")
+          .border(1)
+          .border_color(t.border)
+          .rounded(6)
+          .p(12)
+          .overflow_y_scrollbar()
+          .mode("always")
+          .child(
+            div()
+              .text_size(12)
+              .font_family("JetBrains Mono")
+              .text_color(t.foreground)
+              .whitespace_pre_wrap()
+              .child(outputText || "正在載入上次終端輸出...")
+          )
+      );
+  }
+
   dormantRow(s, t, now, collapsed, index, cx) {
     const pic = icon(s.program, 16, t.dim) || svg("mods/workspace-chrome/terminal.svg").size(15).flex_none().text_color(t.dim);
-    const labelText = s.displayName || s.tabName || s.title || s.program?.name || "Agent";
+    const labelText = s.displayName || s.tabName || s.title || s.program?.name || "Session";
     const hovered = this.hoveredDormant === s.key;
     if (collapsed) {
       return h_flex()
@@ -447,7 +563,7 @@ export default class Agents extends View {
         .gap(4)
         .cursor_pointer()
         .hover((el) => el.bg(t.hover))
-        .tooltip(`${labelText} (點擊喚醒)`)
+        .tooltip(`${labelText} (點擊接續對話)`)
         .on_click((_e, cx) => this.wakeDormantSession(s, "resume", cx))
         .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.dim).child(String(index + 1)))
         .child(h_flex().w(14).flex_none().items_center().justify_center()
@@ -482,20 +598,45 @@ export default class Agents extends View {
       .child(pic)
       .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(labelText))
       .when(hovered, (el) => el.child(
-        div()
-          .id(`del-${s.key}`)
-          .flex_none()
-          .p(2)
-          .rounded(4)
-          .text_color(t.dim)
-          .cursor_pointer()
-          .hover((el) => el.bg(t.raised).text_color(t.foreground))
-          .tooltip("Dismiss saved session")
-          .on_click((e, cx) => {
-            e.stop_propagation();
-            this.deleteSession(s.key, cx);
-          })
-          .child(svg("mods/workspace-chrome/x.svg").size(13)),
+        h_flex().gap(4).items_center()
+          .child(
+            div()
+              .id(`out-${s.key}`)
+              .flex_none()
+              .p(2)
+              .rounded(4)
+              .text_color(t.dim)
+              .cursor_pointer()
+              .hover((el) => el.bg(t.raised).text_color(t.foreground))
+              .tooltip("查看上次輸出")
+              .on_click((e, cx) => {
+                e.stop_propagation();
+                openOverlay({
+                  mod: "workspace-agents",
+                  kind: "dialog",
+                  width: 780,
+                  height: 520,
+                  props: { outputSession: s },
+                });
+              })
+              .child(svg("mods/workspace-chrome/file-text.svg").size(13))
+          )
+          .child(
+            div()
+              .id(`del-${s.key}`)
+              .flex_none()
+              .p(2)
+              .rounded(4)
+              .text_color(t.dim)
+              .cursor_pointer()
+              .hover((el) => el.bg(t.raised).text_color(t.foreground))
+              .tooltip("移除紀錄")
+              .on_click((e, cx) => {
+                e.stop_propagation();
+                this.deleteSession(s.key, cx);
+              })
+              .child(svg("mods/workspace-chrome/x.svg").size(13))
+          )
       ))
       .when(!hovered && Boolean(s.lastSeen), (el) => el.child(
         div().flex_none().text_size(11).text_color(t.dim).child(duration(now - s.lastSeen)),
@@ -629,6 +770,7 @@ export default class Agents extends View {
 
   render(cx) {
     const t = theme();
+    if (props()?.outputSession) return this.outputDialog(t, props().outputSession, cx);
     if (props()?.sortMenu) return this.sortMenu(t);
     if (props()?.sessionMenu) return this.sessionMenu(t);
     const pendingAction = shared("workspace-agents.session_action");
@@ -669,12 +811,10 @@ export default class Agents extends View {
     list = [...pinned, ...rest];
     setAgentOrder(list.map((a) => a.address));
 
-    const activeSpaceObj = allSpaces.find((s) => s.id === activeSpace);
-    const validTabIds = new Set((activeSpaceObj?.tabs ?? []).map((tab) => tab.id));
     const liveTabKeys = new Set(list.map((a) => `${a.space}::${a.tab}`));
-    const dormant = activeSpace
-      ? Object.values(this.cachedSessions ?? {}).filter((s) => s.space === activeSpace && validTabIds.has(s.tab) && !liveTabKeys.has(s.key))
-      : [];
+    const dormant = Object.values(this.cachedSessions ?? {})
+      .filter((s) => (!activeSpace || s.space === activeSpace) && !liveTabKeys.has(s.key))
+      .sort((x, y) => (y.lastSeen ?? 0) - (x.lastSeen ?? 0));
 
     const withKids = (a, i) => {
       const subs = collapsed ? [] : this.tree(all, a.address);
@@ -863,7 +1003,7 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Agents"))
+            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Sessions"))
             .child(
               div()
                 .id("ag-sort")
@@ -871,13 +1011,13 @@ export default class Agents extends View {
                 .text_color(t.dim)
                 .hover((s) => s.text_color(t.foreground))
                 .on_click(() => openOverlay({ mod: "workspace-agents", kind: "popup", width: 200, height: 140, props: { sortMenu: true } }))
-                .tooltip(`Sort agents: ${sort.label}`)
+                .tooltip(`Sort sessions: ${sort.label}`)
                 .child(svg(`mods/workspace-chrome/${sort.icon}.svg`).size(14)),
             ),
         ),
       )
       .when(list.length === 0 && dormant.length === 0 && !collapsed, (el) =>
-        el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
+        el.child(div().px(12).text_size(12).text_color(t.dim).child("No active or saved sessions yet.")),
       )
       .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
       .when(collapsed, (el) =>

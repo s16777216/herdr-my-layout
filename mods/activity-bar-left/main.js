@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, run, layout, agents, shared, setShared, updates } from "herdr";
+import { theme, run, layout, agents, shared, setShared, updates, openOverlay } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -129,7 +129,7 @@ export default class LeftActivityBar extends View {
           "file-text",
           "範本管理 (Template Manager)",
           false,
-          () => run("mod.open", { name: "template-manager" })
+          () => openOverlay({ mod: "template-manager", kind: "dialog", width: 840, height: 620 })
         )
       )
       .child(

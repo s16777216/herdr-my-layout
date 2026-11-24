@@ -215,40 +215,51 @@ function extractSessionId(agent, terminal) {
 }
 
 export default class Agents extends View {
-  init(_props, cx) {
-    if (props()?.sortMenu || props()?.sessionMenu) return;
-    if (props()?.outputSession) {
-      this.outputText = "正在載入上次終端輸出...";
-      const s = props().outputSession;
-      cx.spawn(async (cx) => {
-        try {
-          let text = "";
-          let addr = s.address;
-          if (!addr && s.cwd) {
-            const lsRes = await hc(["ls", "--all", "--json"]).catch(() => null);
-            if (lsRes?.stdout) {
-              try {
-                const terms = JSON.parse(lsRes.stdout)?.terminals ?? [];
-                const normCwd = (s.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-                const matched = terms.find((t) => {
-                  const tCwd = (t.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-                  return tCwd === normCwd || (s.displayName && t.where?.includes(s.displayName));
-                });
-                if (matched?.address) addr = matched.address;
-              } catch {}
+  async readTerminalOutput(s) {
+    try {
+      let text = "";
+      let addr = s.address;
+      if (addr) {
+        const res = await hc(["read", addr]).catch(() => null);
+        text = res?.stdout ?? (typeof res === "string" ? res : "");
+      }
+      if (!text && s.cwd) {
+        const lsRes = await hc(["ls", "--all", "--json"]).catch(() => null);
+        if (lsRes?.stdout) {
+          try {
+            const terms = JSON.parse(lsRes.stdout)?.terminals ?? [];
+            const normCwd = (s.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+            const matched = terms.find((t) => {
+              const tCwd = (t.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+              return tCwd === normCwd || (s.displayName && t.where?.includes(s.displayName));
+            });
+            if (matched?.address) {
+              const res = await hc(["read", matched.address]).catch(() => null);
+              text = res?.stdout ?? (typeof res === "string" ? res : "");
             }
-          }
-          if (addr) {
-            const res = await hc(["read", addr]).catch(() => null);
-            text = res?.stdout ?? (typeof res === "string" ? res : "");
-          }
-          if (!text && s.lastOutput) {
-            text = s.lastOutput;
-          }
-          this.outputText = text ? text.trim() : "（此會話無留存終端輸出）";
-        } catch (err) {
-          this.outputText = "（讀取輸出失敗）";
+          } catch {}
         }
+      }
+      if (!text && s.lastOutput) {
+        text = s.lastOutput;
+      }
+      if (text && text.trim()) return text.trim();
+      return "（此會話終端已結束，且終端緩衝區無殘留輸出）\n\n可直接點擊右上角「接續對話」按鈕開啟新分頁並繼續此工作。";
+    } catch (err) {
+      return `（讀取輸出失敗: ${err?.message || err}）`;
+    }
+  }
+
+  init(inProps, cx) {
+    const p = inProps ?? (typeof props === "function" ? props() : null) ?? {};
+    if (p.sortMenu || p.sessionMenu) return;
+    if (p.outputSession) {
+      const s = p.outputSession;
+      this.outputText = s.lastOutput || "正在載入上次終端輸出...";
+      cx.spawn(async (cx) => {
+        const text = await this.readTerminalOutput(s);
+        setShared("workspace-agents.view_output", { session: s, text, loading: false });
+        this.outputText = text;
         cx.notify();
       });
       return;
@@ -310,6 +321,15 @@ export default class Agents extends View {
           }
         } else if (s.cwd && s.sessionId) {
           this.realSessionIds.set(s.cwd, s.sessionId);
+        }
+        if (s.address) {
+          const res = await hc(["read", s.address]).catch(() => null);
+          const out = res?.stdout?.trim();
+          if (out && out !== s.lastOutput) {
+            const lines = out.split("\n");
+            s.lastOutput = lines.length > 80 ? lines.slice(-80).join("\n") : out;
+            dirty = true;
+          }
         }
       }
       if (dirty) {
@@ -475,7 +495,10 @@ export default class Agents extends View {
   outputDialog(t, s, cx) {
     const titleText = s.displayName || s.tabName || s.title || s.program?.name || "Session";
     const subText = s.cwd ? `${s.cwd}${s.shortTag ? ` · ${s.shortTag}` : ""}` : (s.shortTag ? `ID: ${s.shortTag}` : "");
-    const outputText = this.outputText || "正在載入上次終端輸出...";
+    const vo = shared("workspace-agents.view_output");
+    const isCurrent = vo?.session?.key === s.key;
+    const isLoading = isCurrent && Boolean(vo?.loading);
+    const outputText = (isCurrent && vo?.text) ? vo.text : (this.outputText || s.lastOutput || "正在載入上次終端輸出...");
 
     return v_flex()
       .size_full()
@@ -503,6 +526,31 @@ export default class Agents extends View {
             h_flex()
               .gap(8)
               .items_center()
+              .child(
+                h_flex()
+                  .id("btn-dialog-refresh")
+                  .px(8)
+                  .h(28)
+                  .rounded(6)
+                  .bg(t.raised)
+                  .text_color(t.dim)
+                  .text_size(12)
+                  .items_center()
+                  .gap(4)
+                  .cursor_pointer()
+                  .hover((el) => el.bg(t.hover).text_color(t.foreground))
+                  .on_click((_e, cx) => {
+                    setShared("workspace-agents.view_output", { session: s, text: "正在重新整理終端輸出...", loading: true });
+                    cx.spawn(async (cx) => {
+                      const text = await this.readTerminalOutput(s);
+                      setShared("workspace-agents.view_output", { session: s, text, loading: false });
+                      this.outputText = text;
+                      cx.notify();
+                    });
+                  })
+                  .child(svg("mods/workspace-chrome/spinner.svg").size(12).when(Boolean(isLoading), (el) => el.spin(900)))
+                  .child("重新整理")
+              )
               .child(
                 h_flex()
                   .id("btn-dialog-resume")
@@ -552,7 +600,7 @@ export default class Agents extends View {
           .overflow_y_scrollbar()
           .mode("always")
           .children(
-            (outputText || "正在載入上次終端輸出...").split("\n").map((line, i) =>
+            outputText.split("\n").map((line, i) =>
               div()
                 .id(`out-line-${i}`)
                 .text_size(12)
@@ -627,12 +675,26 @@ export default class Agents extends View {
               .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
               .on_click((_e, cx) => {
                 cx.stop_propagation();
+                setShared("workspace-agents.view_output", {
+                  session: s,
+                  text: s.lastOutput || "正在載入上次終端輸出...",
+                  loading: true,
+                });
                 openOverlay({
                   mod: "workspace-agents",
                   kind: "dialog",
                   width: 780,
                   height: 520,
                   props: { outputSession: s },
+                });
+                cx.spawn(async (cx) => {
+                  const text = await this.readTerminalOutput(s);
+                  setShared("workspace-agents.view_output", {
+                    session: s,
+                    text,
+                    loading: false,
+                  });
+                  cx.notify();
                 });
               })
               .child(svg("mods/workspace-chrome/file-text.svg").size(13))

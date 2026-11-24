@@ -217,6 +217,42 @@ function extractSessionId(agent, terminal) {
 export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu || props()?.sessionMenu) return;
+    if (props()?.outputSession) {
+      this.outputText = "正在載入上次終端輸出...";
+      const s = props().outputSession;
+      cx.spawn(async (cx) => {
+        try {
+          let text = "";
+          let addr = s.address;
+          if (!addr && s.cwd) {
+            const lsRes = await hc(["ls", "--all", "--json"]).catch(() => null);
+            if (lsRes?.stdout) {
+              try {
+                const terms = JSON.parse(lsRes.stdout)?.terminals ?? [];
+                const normCwd = (s.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+                const matched = terms.find((t) => {
+                  const tCwd = (t.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+                  return tCwd === normCwd || (s.displayName && t.where?.includes(s.displayName));
+                });
+                if (matched?.address) addr = matched.address;
+              } catch {}
+            }
+          }
+          if (addr) {
+            const res = await hc(["read", addr]).catch(() => null);
+            text = res?.stdout ?? (typeof res === "string" ? res : "");
+          }
+          if (!text && s.lastOutput) {
+            text = s.lastOutput;
+          }
+          this.outputText = text ? text.trim() : "（此會話無留存終端輸出）";
+        } catch (err) {
+          this.outputText = "（讀取輸出失敗）";
+        }
+        cx.notify();
+      });
+      return;
+    }
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     try { this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}"); } catch { this.changed = {}; }
@@ -437,47 +473,9 @@ export default class Agents extends View {
   }
 
   outputDialog(t, s, cx) {
-    if (!this.outputTextCache) this.outputTextCache = new Map();
-    const cacheKey = s.address || s.key;
-    let outputText = this.outputTextCache.get(cacheKey);
-
-    if (outputText === undefined) {
-      this.outputTextCache.set(cacheKey, "正在載入上次終端輸出...");
-      cx.spawn(async (cx) => {
-        try {
-          let text = "";
-          let addr = s.address;
-          if (!addr && s.cwd) {
-            const lsRes = await hc(["ls", "--all", "--json"]).catch(() => null);
-            if (lsRes?.stdout) {
-              try {
-                const terms = JSON.parse(lsRes.stdout)?.terminals ?? [];
-                const normCwd = (s.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-                const matched = terms.find((t) => {
-                  const tCwd = (t.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-                  return tCwd === normCwd || (s.displayName && t.where?.includes(s.displayName));
-                });
-                if (matched?.address) addr = matched.address;
-              } catch {}
-            }
-          }
-          if (addr) {
-            const res = await hc(["read", addr]).catch(() => null);
-            text = res?.stdout ?? (typeof res === "string" ? res : "");
-          }
-          if (!text && s.lastOutput) {
-            text = s.lastOutput;
-          }
-          this.outputTextCache.set(cacheKey, text ? text.trim() : "（此會話無留存終端輸出）");
-        } catch (err) {
-          this.outputTextCache.set(cacheKey, "（讀取輸出失敗）");
-        }
-        cx.notify();
-      });
-    }
-
     const titleText = s.displayName || s.tabName || s.title || s.program?.name || "Session";
     const subText = s.cwd ? `${s.cwd}${s.shortTag ? ` · ${s.shortTag}` : ""}` : (s.shortTag ? `ID: ${s.shortTag}` : "");
+    const outputText = this.outputText || "正在載入上次終端輸出...";
 
     return v_flex()
       .size_full()

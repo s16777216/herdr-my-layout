@@ -446,9 +446,24 @@ export default class Agents extends View {
       cx.spawn(async (cx) => {
         try {
           let text = "";
-          if (s.address) {
-            const res = await hc(["read", s.address]).catch(() => null);
-            text = res?.text ?? (typeof res === "string" ? res : "");
+          let addr = s.address;
+          if (!addr && s.cwd) {
+            const lsRes = await hc(["ls", "--all", "--json"]).catch(() => null);
+            if (lsRes?.stdout) {
+              try {
+                const terms = JSON.parse(lsRes.stdout)?.terminals ?? [];
+                const normCwd = (s.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+                const matched = terms.find((t) => {
+                  const tCwd = (t.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+                  return tCwd === normCwd || (s.displayName && t.where?.includes(s.displayName));
+                });
+                if (matched?.address) addr = matched.address;
+              } catch {}
+            }
+          }
+          if (addr) {
+            const res = await hc(["read", addr]).catch(() => null);
+            text = res?.stdout ?? (typeof res === "string" ? res : "");
           }
           if (!text && s.lastOutput) {
             text = s.lastOutput;

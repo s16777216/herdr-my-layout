@@ -215,55 +215,8 @@ function extractSessionId(agent, terminal) {
 }
 
 export default class Agents extends View {
-  async readTerminalOutput(s) {
-    try {
-      let text = "";
-      let addr = s.address;
-      if (addr) {
-        const res = await hc(["read", addr]).catch(() => null);
-        text = res?.stdout ?? (typeof res === "string" ? res : "");
-      }
-      if (!text && s.cwd) {
-        const lsRes = await hc(["ls", "--all", "--json"]).catch(() => null);
-        if (lsRes?.stdout) {
-          try {
-            const terms = JSON.parse(lsRes.stdout)?.terminals ?? [];
-            const normCwd = (s.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-            const matched = terms.find((t) => {
-              const tCwd = (t.cwd || "").toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-              return tCwd === normCwd || (s.displayName && t.where?.includes(s.displayName));
-            });
-            if (matched?.address) {
-              const res = await hc(["read", matched.address]).catch(() => null);
-              text = res?.stdout ?? (typeof res === "string" ? res : "");
-            }
-          } catch {}
-        }
-      }
-      if (!text && s.lastOutput) {
-        text = s.lastOutput;
-      }
-      if (text && text.trim()) return text.trim();
-      return "（此會話終端已結束，且終端緩衝區無殘留輸出）\n\n可直接點擊右上角「接續對話」按鈕開啟新分頁並繼續此工作。";
-    } catch (err) {
-      return `（讀取輸出失敗: ${err?.message || err}）`;
-    }
-  }
-
-  init(inProps, cx) {
-    const p = inProps ?? (typeof props === "function" ? props() : null) ?? {};
-    if (p.sortMenu || p.sessionMenu) return;
-    if (p.outputSession) {
-      const s = p.outputSession;
-      this.outputText = s.lastOutput || "正在載入上次終端輸出...";
-      cx.spawn(async (cx) => {
-        const text = await this.readTerminalOutput(s);
-        setShared("workspace-agents.view_output", { session: s, text, loading: false });
-        this.outputText = text;
-        cx.notify();
-      });
-      return;
-    }
+  init(_props, cx) {
+    if (props()?.sortMenu || props()?.sessionMenu) return;
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     try { this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}"); } catch { this.changed = {}; }
@@ -321,15 +274,6 @@ export default class Agents extends View {
           }
         } else if (s.cwd && s.sessionId) {
           this.realSessionIds.set(s.cwd, s.sessionId);
-        }
-        if (s.address) {
-          const res = await hc(["read", s.address]).catch(() => null);
-          const out = res?.stdout?.trim();
-          if (out && out !== s.lastOutput) {
-            const lines = out.split("\n");
-            s.lastOutput = lines.length > 80 ? lines.slice(-80).join("\n") : out;
-            dirty = true;
-          }
         }
       }
       if (dirty) {
@@ -492,126 +436,6 @@ export default class Agents extends View {
         .child(div().flex_1().child(item.label))));
   }
 
-  outputDialog(t, s, cx) {
-    const titleText = s.displayName || s.tabName || s.title || s.program?.name || "Session";
-    const subText = s.cwd ? `${s.cwd}${s.shortTag ? ` · ${s.shortTag}` : ""}` : (s.shortTag ? `ID: ${s.shortTag}` : "");
-    const vo = shared("workspace-agents.view_output");
-    const isCurrent = vo?.session?.key === s.key;
-    const isLoading = isCurrent && Boolean(vo?.loading);
-    const outputText = (isCurrent && vo?.text) ? vo.text : (this.outputText || s.lastOutput || "正在載入上次終端輸出...");
-
-    return v_flex()
-      .size_full()
-      .bg(t.chrome)
-      .p(16)
-      .gap(12)
-      .child(
-        h_flex()
-          .w_full()
-          .justify_between()
-          .items_center()
-          .child(
-            h_flex()
-              .gap(10)
-              .items_center()
-              .child(icon(s.program, 18, t.foreground) || svg("mods/workspace-chrome/terminal.svg").size(18).text_color(t.foreground))
-              .child(
-                v_flex()
-                  .gap(2)
-                  .child(div().text_size(14).font_bold().text_color(t.foreground).child(titleText))
-                  .when(Boolean(subText), (el) => el.child(div().text_size(11).text_color(t.dim).child(subText)))
-              )
-          )
-          .child(
-            h_flex()
-              .gap(8)
-              .items_center()
-              .child(
-                h_flex()
-                  .id("btn-dialog-refresh")
-                  .px(8)
-                  .h(28)
-                  .rounded(6)
-                  .bg(t.raised)
-                  .text_color(t.dim)
-                  .text_size(12)
-                  .items_center()
-                  .gap(4)
-                  .cursor_pointer()
-                  .hover((el) => el.bg(t.hover).text_color(t.foreground))
-                  .on_click((_e, cx) => {
-                    setShared("workspace-agents.view_output", { session: s, text: "正在重新整理終端輸出...", loading: true });
-                    cx.spawn(async (cx) => {
-                      const text = await this.readTerminalOutput(s);
-                      setShared("workspace-agents.view_output", { session: s, text, loading: false });
-                      this.outputText = text;
-                      cx.notify();
-                    });
-                  })
-                  .child(svg("mods/workspace-chrome/spinner.svg").size(12).when(Boolean(isLoading), (el) => el.spin(900)))
-                  .child("重新整理")
-              )
-              .child(
-                h_flex()
-                  .id("btn-dialog-resume")
-                  .px(10)
-                  .h(28)
-                  .rounded(6)
-                  .bg(t.accent)
-                  .text_color(t.solid_foreground ?? "#000000")
-                  .text_size(12)
-                  .font_medium()
-                  .items_center()
-                  .gap(5)
-                  .cursor_pointer()
-                  .hover((el) => el.opacity(0.88))
-                  .on_click(() => {
-                    closeOverlay(props().overlay);
-                    this.wakeDormantSession(s, "resume", cx);
-                  })
-                  .child(svg("mods/workspace-chrome/terminal.svg").size(12).text_color(t.solid_foreground ?? "#000000"))
-                  .child("接續對話")
-              )
-              .child(
-                div()
-                  .id("btn-dialog-close")
-                  .size(28)
-                  .rounded(6)
-                  .items_center()
-                  .justify_center()
-                  .cursor_pointer()
-                  .text_color(t.dim)
-                  .hover((el) => el.bg(t.hover).text_color(t.foreground))
-                  .on_click(() => closeOverlay(props().overlay))
-                  .child(svg("mods/workspace-chrome/x.svg").size(14))
-              )
-          )
-      )
-      .child(
-        v_flex()
-          .flex_1()
-          .min_h(0)
-          .w_full()
-          .bg(t.canvas ?? "#0e1117")
-          .border(1)
-          .border_color(t.border)
-          .rounded(6)
-          .p(12)
-          .overflow_y_scrollbar()
-          .mode("always")
-          .children(
-            outputText.split("\n").map((line, i) =>
-              div()
-                .id(`out-line-${i}`)
-                .text_size(12)
-                .font_family("JetBrains Mono")
-                .text_color(t.foreground)
-                .child(line || " ")
-            )
-          )
-      );
-  }
-
   dormantRow(s, t, now, collapsed, index, cx) {
     const pic = icon(s.program, 16, t.dim) || svg("mods/workspace-chrome/terminal.svg").size(15).flex_none().text_color(t.dim);
     const labelText = s.displayName || s.tabName || s.title || s.program?.name || "Session";
@@ -661,61 +485,21 @@ export default class Agents extends View {
       .child(pic)
       .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(labelText))
       .when(hovered, (el) => el.child(
-        h_flex().gap(4).items_center()
-          .child(
-            div()
-              .id(`out-${s.key}`)
-              .flex_none()
-              .p(2)
-              .rounded(4)
-              .text_color(t.dim)
-              .cursor_pointer()
-              .hover((el) => el.bg(t.raised).text_color(t.foreground))
-              .tooltip("查看上次輸出")
-              .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-              .on_click((_e, cx) => {
-                cx.stop_propagation();
-                setShared("workspace-agents.view_output", {
-                  session: s,
-                  text: s.lastOutput || "正在載入上次終端輸出...",
-                  loading: true,
-                });
-                openOverlay({
-                  mod: "workspace-agents",
-                  kind: "dialog",
-                  width: 780,
-                  height: 520,
-                  props: { outputSession: s },
-                });
-                cx.spawn(async (cx) => {
-                  const text = await this.readTerminalOutput(s);
-                  setShared("workspace-agents.view_output", {
-                    session: s,
-                    text,
-                    loading: false,
-                  });
-                  cx.notify();
-                });
-              })
-              .child(svg("mods/workspace-chrome/file-text.svg").size(13))
-          )
-          .child(
-            div()
-              .id(`del-${s.key}`)
-              .flex_none()
-              .p(2)
-              .rounded(4)
-              .text_color(t.dim)
-              .cursor_pointer()
-              .hover((el) => el.bg(t.raised).text_color(t.foreground))
-              .tooltip("移除紀錄")
-              .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-              .on_click((_e, cx) => {
-                cx.stop_propagation();
-                this.deleteSession(s.key, cx);
-              })
-              .child(svg("mods/workspace-chrome/x.svg").size(13))
-          )
+        div()
+          .id(`del-${s.key}`)
+          .flex_none()
+          .p(2)
+          .rounded(4)
+          .text_color(t.dim)
+          .cursor_pointer()
+          .hover((el) => el.bg(t.raised).text_color(t.foreground))
+          .tooltip("移除紀錄")
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => {
+            cx.stop_propagation();
+            this.deleteSession(s.key, cx);
+          })
+          .child(svg("mods/workspace-chrome/x.svg").size(13))
       ))
       .when(!hovered && Boolean(s.lastSeen), (el) => el.child(
         div().flex_none().text_size(11).text_color(t.dim).child(duration(now - s.lastSeen)),
@@ -849,7 +633,6 @@ export default class Agents extends View {
 
   render(cx) {
     const t = theme();
-    if (props()?.outputSession) return this.outputDialog(t, props().outputSession, cx);
     if (props()?.sortMenu) return this.sortMenu(t);
     if (props()?.sessionMenu) return this.sessionMenu(t);
     const pendingAction = shared("workspace-agents.session_action");

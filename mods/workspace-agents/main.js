@@ -228,6 +228,7 @@ export default class Agents extends View {
     this.realSessionIds = new Map();
     this.seenLiveKeys = new Set();
     this.hoveredDormant = null;
+    this.resumingSession = null;
     this.lastActionSeq = shared("workspace-agents.session_action")?.seq ?? null;
     this.cachedSessions = this.loadSessions();
     setShared("workspace.dormant_sessions", this.cachedSessions);
@@ -236,27 +237,9 @@ export default class Agents extends View {
     cx.timer.every(30000, (cx) => cx.notify());
   }
 
-  deduplicateSessions(sessions) {
-    if (!sessions || typeof sessions !== "object") return {};
-    const entries = Object.values(sessions).sort((a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0));
-    const clean = {};
-    const seen = new Set();
-    for (const s of entries) {
-      if (!s?.key) continue;
-      const idKey = s.sessionId && (s.sessionId.includes("-") || s.sessionId.length >= 16)
-        ? `sid::${s.sessionId}`
-        : `${s.space}::${(s.cwd || "").toLowerCase()}::${s.program?.key || ""}`;
-      if (seen.has(idKey)) continue;
-      seen.add(idKey);
-      clean[s.key] = s;
-    }
-    return clean;
-  }
-
   loadSessions() {
     try {
-      const raw = JSON.parse(localStorage.getItem("agent_sessions_v2") ?? "{}");
-      return this.deduplicateSessions(raw);
+      return JSON.parse(localStorage.getItem("agent_sessions_v2") ?? "{}");
     } catch {
       return {};
     }
@@ -308,6 +291,10 @@ export default class Agents extends View {
     const currentLiveKeys = new Set();
     let dirty = false;
 
+    const resumingKey = (this.resumingSession && (now - this.resumingSession.at < 15000))
+      ? this.resumingSession.key
+      : null;
+
     for (const a of liveAgents ?? []) {
       const term = terminalMap.get(a.address);
       if (!isAgent(a, term)) continue;
@@ -343,6 +330,24 @@ export default class Agents extends View {
         launchArgv: cli.argv,
         lastSeen: now,
       };
+
+      if (resumingKey && sessions[resumingKey] && resumingKey !== key) {
+        if (!next.sessionId && sessions[resumingKey].sessionId) {
+          next.sessionId = sessions[resumingKey].sessionId;
+          next.shortTag = sessions[resumingKey].shortTag;
+        }
+        delete sessions[resumingKey];
+        this.resumingSession = null;
+        dirty = true;
+      } else if (hasRealUuid) {
+        for (const [k, prevS] of Object.entries(sessions)) {
+          if (k !== key && prevS.sessionId === next.sessionId) {
+            delete sessions[k];
+            dirty = true;
+          }
+        }
+      }
+
       const prev = sessions[key];
       if (
         !prev ||
@@ -356,17 +361,6 @@ export default class Agents extends View {
       ) {
         sessions[key] = next;
         dirty = true;
-      }
-
-      // Merge/remove obsolete dormant session if this live agent is continuing it
-      for (const [k, prevS] of Object.entries(sessions)) {
-        if (k === key) continue;
-        const sameSessionId = next.sessionId && prevS.sessionId && next.sessionId === prevS.sessionId;
-        const sameWorkspace = next.space === prevS.space && next.cwd && prevS.cwd && next.cwd.toLowerCase() === prevS.cwd.toLowerCase() && next.program?.key === prevS.program?.key;
-        if (sameSessionId || sameWorkspace) {
-          delete sessions[k];
-          dirty = true;
-        }
       }
     }
 
@@ -423,7 +417,7 @@ export default class Agents extends View {
         }
       } else {
         notify({ title: `接續 ${s.program?.name || "Session"}`, body: "開啟新分頁並接續對話..." });
-        this.deleteSession(s.key, cx);
+        this.resumingSession = { key: s.key, at: Date.now() };
         run("tab.new", {
           space: s.space,
           name: s.displayName || s.tabName || s.program?.name || "Session",
@@ -705,13 +699,14 @@ export default class Agents extends View {
 
     const liveTabKeys = new Set(list.map((a) => `${a.space}::${a.tab}`));
     const liveSessionIds = new Set();
-    const liveWorkspaces = new Set();
     for (const a of list) {
       const term = all.find((t) => t.address === a.address);
       const sid = extractSessionId(a, term);
       if (sid && (sid.includes("-") || sid.length >= 16)) liveSessionIds.add(sid);
-      if (term?.cwd) liveWorkspaces.add(`${a.space}::${(term.cwd).toLowerCase()}::${a.program?.key || ""}`);
     }
+    const resumingKey = (this.resumingSession && (now - this.resumingSession.at < 8000))
+      ? this.resumingSession.key
+      : null;
 
     const dormantMap = new Map();
     const sortedDormant = Object.values(this.cachedSessions ?? {})
@@ -719,7 +714,7 @@ export default class Agents extends View {
         if (activeSpace && s.space !== activeSpace) return false;
         if (liveTabKeys.has(s.key)) return false;
         if (s.sessionId && liveSessionIds.has(s.sessionId)) return false;
-        if (s.cwd && liveWorkspaces.has(`${s.space}::${(s.cwd).toLowerCase()}::${s.program?.key || ""}`)) return false;
+        if (resumingKey && s.key === resumingKey) return false;
         return true;
       })
       .sort((x, y) => (y.lastSeen ?? 0) - (x.lastSeen ?? 0));
@@ -727,7 +722,7 @@ export default class Agents extends View {
     for (const s of sortedDormant) {
       const dedupKey = s.sessionId && (s.sessionId.includes("-") || s.sessionId.length >= 16)
         ? `sid::${s.sessionId}`
-        : `${s.space}::${(s.cwd || "").toLowerCase()}::${s.program?.key || ""}`;
+        : s.key;
       if (!dormantMap.has(dedupKey)) {
         dormantMap.set(dedupKey, s);
       }

@@ -538,13 +538,15 @@ export default class Agents extends View {
           .p(12)
           .overflow_y_scrollbar()
           .mode("always")
-          .child(
-            div()
-              .text_size(12)
-              .font_family("JetBrains Mono")
-              .text_color(t.foreground)
-              .whitespace_pre_wrap()
-              .child(outputText || "正在載入上次終端輸出...")
+          .children(
+            (outputText || "正在載入上次終端輸出...").split("\n").map((line, i) =>
+              div()
+                .id(`out-line-${i}`)
+                .text_size(12)
+                .font_family("JetBrains Mono")
+                .text_color(t.foreground)
+                .child(line || " ")
+            )
           )
       );
   }
